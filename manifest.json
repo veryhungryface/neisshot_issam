@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "나이스입력도우미 by issamGPT",
+  "version": "1.4",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu4SxyA3vts1yWU1DmKomoZPyPVWR47CdPny+WvBAz4jHQh1eF2oontJFxfq5NLOd/kPoPuhjOxSE2NIVZtr87iYhzFKhAiwhBXlqM1hZyFpCO9QLyx1mQFZ+RPTKRmsshIQ6ZpdZhdf4QHDAh2X2/8kDK7CeCDSDpSPZkEZcVmM2SMMHIUCD1cRuB432Nv05JrnbHUwiLEczrecKNm+7wsPNLl9ebAMRbPxvfVNtIke+kz4B30+hy0bXPlfjjHQjiODtIjszTguvlXDfXQrN/ABAXyCH5M0Vp6nKS78uBslQ5YWBLMzWP6103LKKbdz8PL1/mT4vAYHSNIugDZ9ViQIDAQAB",
+  "description": "나이스(NEIS) 학생 데이터 일괄 입력 보조 도구",
+  "permissions": ["sidePanel", "storage", "scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "externally_connectable": {
+    "matches": [
+      "https://student-record-ai-editor.vercel.app/*",
+      "https://veryhungryface.github.io/student-record-ai-editor/*",
+      "http://localhost/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "action": {
+    "default_title": "나이스입력도우미 by issamGPT 열기",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
+  },
+  "commands": {
+    "open-side-panel": {
+      "suggested_key": {
+        "default": "Alt+G"
+      },
+      "description": "나이스입력도우미 사이드패널 열기"
+    }
+  }
+}
