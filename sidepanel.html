@@ -263,69 +263,43 @@
       border-color: var(--accent);
     }
 
-    /* ===== 주황 pill (이동 칸 수) ===== */
-    .pill-group {
+    /* ===== 나이스 메뉴 위치 안내 ===== */
+    .menu-guide {
+      border: 1.5px solid #e2e4e8;
+      border-left: 5px solid var(--accent);
+      border-radius: 12px;
+      background: #fff;
+      padding: 13px 14px;
+    }
+
+    .menu-guide-top {
       display: flex;
-      gap: 8px;
+      align-items: center;
+      margin-bottom: 9px;
     }
 
-    .pill {
-      flex: 1;
-      padding: 14px 8px;
-      border: 1.5px solid #e2e4e8;
-      border-radius: 12px;
-      background: #fff;
-      color: #3f4450;
-      font-size: 13px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      text-align: center;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
-    }
-
-    .pill:hover {
-      border-color: #c7cad0;
-    }
-
-    .pill.active {
-      border-color: var(--accent);
+    .menu-source {
+      min-width: 0;
       color: var(--accent);
-      background: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+      word-break: keep-all;
     }
 
-    .dropdown-row {
-      margin-top: 10px;
-    }
-
-    .dropdown {
-      width: 100%;
-      padding: 13px 40px 13px 16px;
-      border: 1.5px solid #e2e4e8;
-      border-radius: 12px;
-      background-color: #fff;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%238a8f98' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-      background-repeat: no-repeat;
-      background-position: right 16px center;
+    .menu-path {
       font-size: 13px;
-      font-weight: 600;
-      font-family: inherit;
+      font-weight: 800;
+      line-height: 1.5;
       color: var(--text);
-      cursor: pointer;
-      outline: none;
-      -webkit-appearance: none;
-      appearance: none;
-    }
-
-    .dropdown:focus {
-      border-color: var(--accent);
+      overflow-wrap: anywhere;
     }
 
     /* ===== 하단 액션 ===== */
     .actions {
       display: flex;
       gap: 10px;
-      margin-top: 4px;
+      margin-top: 10px;
       flex-shrink: 0;
     }
 
@@ -372,14 +346,18 @@
     }
 
     .exec-caution {
-      margin-top: 12px;
-      font-size: 11.5px;
-      line-height: 1.5;
-      color: #d1640f;
-      background: var(--accent-weak);
+      margin-top: 4px;
+      border: 1.5px solid #f2b987;
+      border-left: 5px solid var(--accent);
       border-radius: 10px;
-      padding: 10px 12px;
+      background: #fff7ed;
+      color: #9a4107;
+      padding: 12px 13px;
+      font-size: 12.5px;
+      font-weight: 800;
+      line-height: 1.55;
       word-break: keep-all;
+      box-shadow: 0 1px 2px rgba(230, 105, 20, 0.12);
     }
 
     /* ===== 옵션 사이드바 (입력 속도) ===== */
@@ -516,6 +494,168 @@
       margin-left: 6px;
     }
 
+    .settings-block {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    .settings-block:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .settings-heading {
+      margin-bottom: 10px;
+      font-size: 13px;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .setting-text {
+      min-width: 0;
+    }
+
+    .setting-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .setting-desc {
+      margin-top: 4px;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: var(--sub);
+      word-break: keep-all;
+    }
+
+    .toggle {
+      position: relative;
+      flex-shrink: 0;
+      width: 46px;
+      height: 26px;
+    }
+
+    .toggle input {
+      display: none;
+    }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: #d7dbe1;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      transition: transform 0.15s;
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: var(--accent);
+    }
+
+    .toggle input:checked + .toggle-track::after {
+      transform: translateX(20px);
+    }
+
+    .force-tab-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      opacity: 0.45;
+      transition: opacity 0.15s;
+    }
+
+    .force-tab-controls.enabled {
+      opacity: 1;
+    }
+
+    .paste-controls {
+      margin-top: 12px;
+      opacity: 0.45;
+      transition: opacity 0.15s;
+    }
+
+    .paste-controls.enabled {
+      opacity: 1;
+    }
+
+    .paste-input {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      padding: 11px 12px;
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--text);
+      font-size: 12.5px;
+      line-height: 1.55;
+      font-family: inherit;
+      outline: none;
+    }
+
+    .paste-input:focus {
+      border-color: var(--accent);
+    }
+
+    .paste-input:disabled {
+      background: #f4f5f7;
+      cursor: not-allowed;
+    }
+
+    .paste-status {
+      margin-top: 7px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sub);
+    }
+
+    .number-input {
+      width: 82px;
+      padding: 10px 12px;
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      color: var(--text);
+      outline: none;
+    }
+
+    .number-input:focus {
+      border-color: var(--accent);
+    }
+
+    .number-input:disabled {
+      background: #f4f5f7;
+      cursor: not-allowed;
+    }
+
     ::-webkit-scrollbar {
       width: 6px;
     }
@@ -636,78 +776,103 @@
       </div>
     </div>
 
-    <!-- 이동 칸 수 (Tab) -->
+    <!-- 나이스 메뉴 위치 -->
     <div class="section">
-      <div class="label">이동 칸 수 (Tab)</div>
-      <div class="pill-group">
-        <button type="button" class="pill active" data-tab="2">2회</button>
-        <button type="button" class="pill" data-tab="4">4회</button>
-        <button type="button" class="pill" data-tab="custom">직접 지정</button>
+      <div class="label">나이스 메뉴 위치</div>
+      <div class="menu-guide" id="neisMenuGuide">
+        <div class="menu-guide-top">
+          <span class="menu-source" id="menuSourceLabel">소스 미확인</span>
+        </div>
+        <div class="menu-path" id="menuPathText">사이트에서 데이터를 보내면 메뉴 위치가 자동 표시됩니다.</div>
       </div>
-      <div class="dropdown-row" id="customTabRow" style="display:none;">
-        <select id="customTabCount" class="dropdown">
-          <option value="1">1회</option>
-          <option value="2" selected>2회</option>
-          <option value="3">3회</option>
-          <option value="4">4회</option>
-          <option value="5">5회</option>
-          <option value="6">6회</option>
-          <option value="7">7회</option>
-          <option value="8">8회</option>
-        </select>
-      </div>
-      <div class="hint">Tab = 한 칸 입력 후 다음 입력칸으로 이동할 때 누르는 횟수. 예) 행특·과세특·개세특·독서활동은 2회, 진로희망사항은 4회.</div>
     </div>
 
     <!-- 하단 액션 -->
+    <div class="exec-caution">⚠️ 실행 전 NEIS에서 입력할 첫 칸을 클릭해 커서가 깜박이는지 꼭 확인하세요.</div>
     <div class="actions">
       <button type="button" class="btn-reset" id="btnReset">초기화</button>
       <button type="button" class="btn-exec" id="btnExecute" disabled>일괄 입력 실행</button>
     </div>
-    <div class="exec-caution">⚠️ 실행 전 NEIS에서 입력할 첫 칸을 클릭해 커서가 깜박이는지 꼭 확인하세요.</div>
   </div>
 
   <!-- 옵션 오버레이 -->
   <div class="options-overlay" id="optionsOverlay"></div>
 
-  <!-- 옵션 사이드바 (입력 속도) -->
+  <!-- 옵션 사이드바 -->
   <div class="options-sidebar" id="optionsSidebar">
     <div class="options-header">
-      <h3>⚡ 입력 속도</h3>
+      <h3>설정</h3>
       <button class="options-close" id="optionsClose">✕</button>
     </div>
     <div class="options-content">
-      <div class="speed-options">
-        <label class="speed-option" data-speed="fastest">
-          <input type="radio" name="speed" value="fastest">
-          <div class="speed-dot"></div>
-          <span class="speed-label">🚀 가장 빠르게!</span>
-          <span class="speed-warning">⚠️ 오류 가능</span>
-        </label>
-        <label class="speed-option" data-speed="fast">
-          <input type="radio" name="speed" value="fast">
-          <div class="speed-dot"></div>
-          <span class="speed-label">⚡ 빠르게!</span>
-        </label>
-        <label class="speed-option selected" data-speed="normal">
-          <input type="radio" name="speed" value="normal" checked>
-          <div class="speed-dot"></div>
-          <span class="speed-label">✨ 중간 (권장)</span>
-        </label>
-        <label class="speed-option" data-speed="slow">
-          <input type="radio" name="speed" value="slow">
-          <div class="speed-dot"></div>
-          <span class="speed-label">🐢 천천히</span>
-        </label>
-        <label class="speed-option" data-speed="slowest">
-          <input type="radio" name="speed" value="slowest">
-          <div class="speed-dot"></div>
-          <span class="speed-label">🐌 아주 천천히</span>
-        </label>
+      <div class="settings-block">
+        <div class="settings-heading">1) 속도조절</div>
+        <div class="speed-options">
+          <label class="speed-option" data-speed="fastest">
+            <input type="radio" name="speed" value="fastest">
+            <div class="speed-dot"></div>
+            <span class="speed-label">🚀 가장 빠르게!</span>
+            <span class="speed-warning">⚠️ 오류 가능</span>
+          </label>
+          <label class="speed-option" data-speed="fast">
+            <input type="radio" name="speed" value="fast">
+            <div class="speed-dot"></div>
+            <span class="speed-label">⚡ 빠르게!</span>
+          </label>
+          <label class="speed-option selected" data-speed="normal">
+            <input type="radio" name="speed" value="normal" checked>
+            <div class="speed-dot"></div>
+            <span class="speed-label">✨ 중간 (권장)</span>
+          </label>
+          <label class="speed-option" data-speed="slow">
+            <input type="radio" name="speed" value="slow">
+            <div class="speed-dot"></div>
+            <span class="speed-label">🐢 천천히</span>
+          </label>
+          <label class="speed-option" data-speed="slowest">
+            <input type="radio" name="speed" value="slowest">
+            <div class="speed-dot"></div>
+            <span class="speed-label">🐌 아주 천천히</span>
+          </label>
+        </div>
+        <p style="font-size: 11.5px; color: var(--sub); margin-top: 12px; line-height: 1.6;">
+          💡 입력이 안 되거나 값이 사라지면 더 느린 속도를 선택하세요.
+        </p>
       </div>
-      <p style="font-size: 11.5px; color: var(--sub); margin-top: 20px; line-height: 1.6;">
-        💡 입력이 안 되거나 값이 사라지면 더 느린 속도를 선택하세요.
-      </p>
+
+      <div class="settings-block">
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">2) 데이터 직접 붙여넣기</div>
+            <div class="setting-desc">1열 표 데이터를 붙여넣고 토글을 끄면 미리보기에 반영됩니다.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="directPasteToggle">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="paste-controls" id="directPasteControls">
+          <textarea id="directPasteInput" class="paste-input" placeholder="한 줄에 한 명씩 붙여넣기" disabled></textarea>
+          <div class="paste-status" id="directPasteStatus">0건 대기</div>
+        </div>
+      </div>
+
+      <div class="settings-block">
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">3) 탭수 수동설정</div>
+            <div class="setting-desc">자동 메뉴값 대신 지정한 이동 횟수를 사용합니다.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="forceTabToggle">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="force-tab-controls" id="forceTabControls">
+          <input type="number" id="forceTabCount" class="number-input" min="1" max="20" value="2" disabled>
+          <span class="setting-desc">회 이동</span>
+        </div>
+      </div>
     </div>
   </div>
 

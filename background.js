@@ -21,7 +21,10 @@ chrome.runtime.onInstalled.addListener(() => {
 function isAllowedSender(sender) {
   try {
     const u = new URL(sender.url || sender.origin || "");
-    if (u.origin === "https://student-record-ai-editor.vercel.app") {
+    if (
+      u.origin === "https://student-record-ai-editor.vercel.app" ||
+      u.origin === "https://student-record-ai-editor-cxk5.vercel.app"
+    ) {
       return true;
     }
     if (u.origin === "https://veryhungryface.github.io") {
@@ -54,11 +57,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     .map((r) => String(r ?? "").trim())
     .filter((r) => r.length > 0);
 
-  // 3-1) 카테고리(교과발달사항/창체/행동발달 등) — 사이트가 함께 보냄. 미리보기 제목에 사용.
+  // 3-1) 카테고리/과목 — 미리보기 제목, 메뉴 위치, 자동 탭 수에 사용.
   const category = typeof msg.category === "string" ? msg.category.trim() : "";
+  const subject =
+    typeof msg.subject === "string" ? msg.subject.trim() :
+      typeof msg.subjectName === "string" ? msg.subjectName.trim() : "";
 
   // 4) 저장 (sidepanel.js 의 injectData / 미리보기가 읽는 키와 동일)
-  chrome.storage.local.set({ savedArray: rows, savedCategory: category }, () => {
+  chrome.storage.local.set({ savedArray: rows, savedCategory: category, savedSubject: subject }, () => {
     // 5) 확장 아이콘에 건수 배지 표시
     chrome.action.setBadgeText({ text: rows.length ? String(rows.length) : "" });
     chrome.action.setBadgeBackgroundColor({ color: "#E66914" });

@@ -28,15 +28,84 @@ const CATEGORY_LABELS = {
   reading: '독서활동상황',
 };
 
-function previewTitleText(category) {
+const SOURCE_GUIDES = [
+  {
+    keys: ['subject', '교과학습발달', '교과발달사항', '교과발달', '교과'],
+    sourceLabel: '교과학습발달',
+    menuPath: '학급담임-학생평가-학기말종합의견',
+    tabCount: 3,
+    titleType: 'subject',
+  },
+  {
+    keys: ['creative', '창체', '창의적체험활동', '자율자치활동', '자율활동'],
+    sourceLabel: '창체',
+    menuPath: '학급담임-창의적체험활동-자율자치활동(자율활동)관리',
+    tabCount: 2,
+    titleType: 'creative',
+  },
+  {
+    keys: ['behavior', '행발', '행동발달', '행동특성및종합의견', '행동특성'],
+    sourceLabel: '행발',
+    menuPath: '학급담임-행동특성및종합의견-행동특성및종합의견',
+    tabCount: 2,
+    titleType: 'behavior',
+  },
+];
+
+const DEFAULT_SOURCE_GUIDE = {
+  sourceLabel: '소스 미확인',
+  menuPath: '사이트에서 데이터를 보내면 메뉴 위치가 자동 표시됩니다.',
+  tabCount: 2,
+};
+
+function normalizeSourceKey(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function getSourceGuide(category) {
+  const normalized = normalizeSourceKey(category);
+  if (!normalized) return DEFAULT_SOURCE_GUIDE;
+
+  const guide = SOURCE_GUIDES.find((item) =>
+    item.keys.some((key) => normalized.includes(normalizeSourceKey(key)))
+  );
+
+  if (guide) return guide;
+
+  return {
+    sourceLabel: CATEGORY_LABELS[category] || category || DEFAULT_SOURCE_GUIDE.sourceLabel,
+    menuPath: '지원되는 소스: 교과학습발달, 창체, 행발',
+    tabCount: DEFAULT_SOURCE_GUIDE.tabCount,
+  };
+}
+
+function previewTitleText(category, subject = '') {
   if (!category) return '미리보기';
+  const guide = getSourceGuide(category);
+  const subjectLabel = String(subject || '').trim();
+
+  if (guide.titleType === 'subject') {
+    return `교과${subjectLabel ? `(${subjectLabel})` : ''} 학기말종합의견 미리보기`;
+  }
+  if (guide.titleType === 'creative') return '창체 자율활동관리 미리보기';
+  if (guide.titleType === 'behavior') return '행동특성및종합의견 미리보기';
+
   const label = CATEGORY_LABELS[category] || category;
   return `${label} 미리보기`;
 }
 
-function applyCategoryTitle(category) {
+function applyCategoryTitle(category, subject = '') {
   const el = document.getElementById('previewTitle');
-  if (el) el.textContent = previewTitleText(category);
+  if (el) el.textContent = previewTitleText(category, subject);
+}
+
+function applySourceGuide(category) {
+  const guide = getSourceGuide(category);
+  const sourceLabel = document.getElementById('menuSourceLabel');
+  const menuPath = document.getElementById('menuPathText');
+
+  if (sourceLabel) sourceLabel.textContent = guide.sourceLabel;
+  if (menuPath) menuPath.textContent = guide.menuPath;
 }
 
 // 표 렌더링 함수
@@ -80,15 +149,15 @@ async function injectData(tabCount) {
 
   // 딜레이 설정 - 5단계 속도 프리셋
   const speedPresets = {
-    fastest: { tab: 30, afterTab: 40, focus: 10, blur: 30, next: 80 },
-    fast: { tab: 50, afterTab: 60, focus: 20, blur: 50, next: 120 },
-    normal: { tab: 80, afterTab: 100, focus: 30, blur: 80, next: 200 },
-    slow: { tab: 120, afterTab: 150, focus: 50, blur: 120, next: 300 },
-    slowest: { tab: 200, afterTab: 250, focus: 80, blur: 180, next: 400 }
+    fastest: { tab: 20, afterTab: 30, focus: 8, blur: 20, next: 55 },
+    fast: { tab: 35, afterTab: 40, focus: 15, blur: 35, next: 85 },
+    normal: { tab: 55, afterTab: 70, focus: 20, blur: 55, next: 140 },
+    slow: { tab: 85, afterTab: 105, focus: 35, blur: 85, next: 210 },
+    slowest: { tab: 140, afterTab: 175, focus: 55, blur: 125, next: 280 }
   };
 
   const selectedSpeed = document.querySelector('input[name="speed"]:checked')?.value || 'normal';
-  const delays = speedPresets[selectedSpeed];
+  const delays = speedPresets[selectedSpeed] || speedPresets.normal;
 
   chrome.storage.local.get(['savedArray'], (res) => {
     const dataList = res.savedArray || [];
@@ -103,25 +172,94 @@ async function injectData(tabCount) {
         const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         let successCount = 0;
+        const KEY_EVENT_DELAY = Math.max(8, Math.round(DELAYS.tab * 0.5));
+        const FALLBACK_FOCUS_DELAY = Math.max(8, Math.round(DELAYS.focus * 0.75));
+
+        const isEditableInput = (element) => {
+          if (!element || !(element instanceof HTMLElement)) return false;
+          const tagName = element.tagName;
+
+          if (tagName === 'TEXTAREA') {
+            return !element.disabled && !element.readOnly;
+          }
+
+          if (tagName === 'INPUT') {
+            const type = String(element.type || 'text').toLowerCase();
+            const ignoredTypes = ['hidden', 'button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'range', 'color'];
+            return !ignoredTypes.includes(type) && !element.disabled && !element.readOnly;
+          }
+
+          return element.isContentEditable || element.getAttribute('role') === 'textbox';
+        };
+
+        const isVisibleInput = (element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden';
+        };
+
+        const getActiveInput = () => {
+          if (isEditableInput(document.activeElement)) return document.activeElement;
+
+          return document.querySelector('textarea.cl-text:focus') ||
+            document.querySelector('input.cl-text:focus') ||
+            document.querySelector('[contenteditable="true"]:focus') ||
+            document.querySelector('[role="textbox"]:focus') ||
+            document.querySelector('.cl-grid-row.cl-selected textarea.cl-text') ||
+            document.querySelector('.cl-grid-row.cl-selected input.cl-text') ||
+            document.querySelector('.cl-grid-row.cl-editing textarea.cl-text') ||
+            document.querySelector('.cl-grid-row.cl-editing input.cl-text');
+        };
+
+        const getFocusableInputs = () => Array.from(document.querySelectorAll([
+          'textarea',
+          'input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"])',
+          '[contenteditable="true"]',
+          '[role="textbox"]',
+        ].join(','))).filter((element) => isEditableInput(element) && isVisibleInput(element));
+
+        const focusInput = async (element) => {
+          if (!element) return null;
+          element.scrollIntoView({ behavior: 'auto', block: 'center' });
+          await wait(FALLBACK_FOCUS_DELAY);
+          element.focus({ preventScroll: true });
+          await wait(FALLBACK_FOCUS_DELAY);
+
+          if (document.activeElement !== element && typeof element.click === 'function') {
+            element.click();
+            await wait(FALLBACK_FOCUS_DELAY);
+            element.focus({ preventScroll: true });
+          }
+
+          return getActiveInput();
+        };
+
+        const focusNextInput = async (fromElement) => {
+          const inputs = getFocusableInputs();
+          if (inputs.length === 0) return null;
+
+          let index = inputs.indexOf(fromElement);
+          if (index === -1 && fromElement?.compareDocumentPosition) {
+            index = inputs.findIndex((input) =>
+              Boolean(fromElement.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING)
+            );
+            index = index === -1 ? inputs.length - 1 : index - 1;
+          }
+
+          const nextInput = inputs[(Math.max(index, -1) + 1) % inputs.length];
+          return focusInput(nextInput);
+        };
 
         // 활성화된 입력 요소 확인 (사용자가 클릭한 요소 우선!)
         console.log('🔄 활성화된 입력 요소 확인...');
 
         // 1. 먼저 현재 포커스된 요소 확인 (사용자가 실제로 클릭한 것)
-        let activeInput = null;
-        if (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT') {
-          activeInput = document.activeElement;
+        let activeInput = getActiveInput();
+        if (activeInput) {
           console.log('✅ activeElement에서 입력 요소 발견:', activeInput.tagName);
-        }
-
-        // 2. 없으면 :focus 셀렉터로 찾기
-        if (!activeInput) {
-          activeInput = document.querySelector('textarea.cl-text:focus') ||
-            document.querySelector('input.cl-text:focus') ||
-            document.querySelector('.cl-grid-row.cl-selected textarea.cl-text') ||
-            document.querySelector('.cl-grid-row.cl-selected input.cl-text') ||
-            document.querySelector('.cl-grid-row.cl-editing textarea.cl-text') ||
-            document.querySelector('.cl-grid-row.cl-editing input.cl-text');
         }
 
         // 활성화된 입력 요소가 없으면 결과 반환
@@ -132,8 +270,10 @@ async function injectData(tabCount) {
 
         console.log('✅ 활성화된 입력 요소 발견! Tab 방식으로 입력 시작');
 
-        // Tab 키 이벤트 헬퍼
+        // Tab 키 이벤트 헬퍼. 일반 웹폼은 synthetic Tab으로 포커스가 이동하지 않아 직접 다음 입력칸을 잡는다.
         const pressTab = async (element) => {
+          const startInput = getActiveInput() || (isEditableInput(element) ? element : null);
+          const target = startInput || element || document.activeElement || document.body;
           const tabDown = new KeyboardEvent('keydown', {
             key: 'Tab', code: 'Tab', keyCode: 9, which: 9,
             bubbles: true, cancelable: true
@@ -141,26 +281,15 @@ async function injectData(tabCount) {
           const tabUp = new KeyboardEvent('keyup', {
             key: 'Tab', code: 'Tab', keyCode: 9, which: 9, bubbles: true
           });
-          element.dispatchEvent(tabDown);
-          await wait(50);
-          element.dispatchEvent(tabUp);
-          await wait(100);
-        };
+          target.dispatchEvent(tabDown);
+          await wait(KEY_EVENT_DELAY);
+          target.dispatchEvent(tabUp);
+          await wait(DELAYS.tab);
 
-        // 더블클릭 헬퍼
-        const simulateDblClick = (element) => {
-          const rect = element.getBoundingClientRect();
-          const x = rect.left + rect.width / 2;
-          const y = rect.top + rect.height / 2;
+          const movedInput = getActiveInput();
+          if (movedInput && movedInput !== startInput) return movedInput;
 
-          ['mousedown', 'mouseup', 'click', 'mousedown', 'mouseup', 'click'].forEach(type => {
-            element.dispatchEvent(new MouseEvent(type, {
-              bubbles: true, cancelable: true, view: window, clientX: x, clientY: y
-            }));
-          });
-          element.dispatchEvent(new MouseEvent('dblclick', {
-            bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, detail: 2
-          }));
+          return focusNextInput(startInput || target);
         };
 
         let currentInput = activeInput;
@@ -174,49 +303,25 @@ async function injectData(tabCount) {
 
             // 설정된 횟수만큼 Tab
             for (let t = 0; t < TABS_PER_ROW; t++) {
-              await pressTab(document.activeElement || currentInput);
+              const movedInput = await pressTab(currentInput);
+              if (movedInput) currentInput = movedInput;
               await wait(DELAYS.tab);
             }
             await wait(DELAYS.afterTab);
 
             // 새로 활성화된 입력 요소 찾기 (textarea 또는 input)
-            let newInput = document.querySelector('textarea.cl-text:focus') ||
-              document.querySelector('input.cl-text:focus');
-            if (!newInput && (document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'INPUT')) {
-              newInput = document.activeElement;
-            }
+            let newInput = getActiveInput() || currentInput;
 
             if (newInput) {
               currentInput = newInput;
               console.log(`${i}번: Tab으로 이동 성공!`);
             } else {
-              // Tab 실패 시 직접 행 찾기
-              console.log(`${i}번: Tab 실패, 직접 행 찾기...`);
-              const nextRow = document.querySelector(`div[data-rowindex="${i}"]`);
-              if (nextRow) {
-                nextRow.scrollIntoView({ behavior: 'auto', block: 'center' });
-                await wait(100);
-                const nextCell = nextRow.querySelector(`div[data-cellindex="${TARGET_CELL_INDEX}"]`);
-                if (nextCell) {
-                  let textarea = nextCell.querySelector('textarea.cl-text');
-                  if (!textarea) {
-                    const clControl = nextCell.querySelector('.cl-control');
-                    if (clControl) {
-                      simulateDblClick(clControl);
-                      await wait(300);
-                      textarea = nextCell.querySelector('textarea.cl-text');
-                    }
-                  }
-                  if (textarea) {
-                    currentTextarea = textarea;
-                  }
-                }
-              }
+              console.log(`${i}번: Tab 이동 실패, 입력 요소를 찾지 못함`);
             }
           }
 
           // 현재 입력 요소에 입력 (textarea 또는 input)
-          if (currentInput && (currentInput.tagName === 'TEXTAREA' || currentInput.tagName === 'INPUT')) {
+          if (isEditableInput(currentInput)) {
             console.log(`${i}번: ${currentInput.tagName} 발견, 입력 시작...`);
 
             // 확실히 포커스
@@ -226,7 +331,7 @@ async function injectData(tabCount) {
             // APPEND_CONFIG에 따라 기존 텍스트 처리
             let finalText = textData;
             if (APPEND_CONFIG.type !== 'none') {
-              const existingText = (currentInput.value || '').trim();
+              const existingText = (currentInput.value || currentInput.textContent || '').trim();
               if (existingText) {
                 if (APPEND_CONFIG.type === 'newline') {
                   finalText = existingText + '\n' + textData;
@@ -239,13 +344,17 @@ async function injectData(tabCount) {
               currentInput.select && currentInput.select();
             }
 
-            currentInput.value = finalText;
+            if (currentInput.tagName === 'TEXTAREA' || currentInput.tagName === 'INPUT') {
+              currentInput.value = finalText;
 
-            // 네이티브 setter (textarea와 input 모두 지원)
-            const setter = currentInput.tagName === 'TEXTAREA'
-              ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-              : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-            if (setter) setter.call(currentInput, finalText);
+              // 네이티브 setter (textarea와 input 모두 지원)
+              const setter = currentInput.tagName === 'TEXTAREA'
+                ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+                : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+              if (setter) setter.call(currentInput, finalText);
+            } else {
+              currentInput.textContent = finalText;
+            }
 
             // 이벤트 발생
             currentInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -311,16 +420,22 @@ async function injectData(tabCount) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// 새 UI 배선 (초기화 / 일괄 입력 실행 / 입력 방식 / 이동 칸 수)
+// 새 UI 배선 (초기화 / 일괄 입력 실행 / 입력 방식 / 메뉴 위치)
 // ──────────────────────────────────────────────────────────────
 
 // 데이터 초기화 — ✕ 버튼과 하단 '초기화' 버튼 공용
 function clearAllData() {
   tableBody.innerHTML = '';
   rowCountDisplay.textContent = '0건';
-  chrome.storage.local.remove(['savedArray', 'savedCategory']);
+  chrome.storage.local.remove(['savedArray', 'savedCategory', 'savedSubject', 'directPasteText', 'directPasteEnabled']);
   chrome.action.setBadgeText({ text: '' }); // 데이터 비우면 아이콘 배지도 정리
   applyCategoryTitle('');
+  applySourceGuide('');
+  const directInput = document.getElementById('directPasteInput');
+  const directStatus = document.getElementById('directPasteStatus');
+  if (directInput) directInput.value = '';
+  if (directStatus) directStatus.textContent = '0건 대기';
+  applyDirectPasteState(false);
   const execBtn = document.getElementById('btnExecute');
   if (execBtn) execBtn.disabled = true;
   const empty = document.getElementById('previewEmpty');
@@ -331,12 +446,29 @@ function clearAllData() {
 const btnReset = document.getElementById('btnReset');
 if (btnReset) btnReset.addEventListener('click', clearAllData);
 
-// '일괄 입력 실행' — 이동 칸 수는 customTabCount 값을 사용 (pill이 동기화)
+function clampTabCount(value) {
+  const count = parseInt(value, 10);
+  if (!Number.isFinite(count)) return 2;
+  return Math.min(Math.max(count, 1), 20);
+}
+
+function getForcedTabCount() {
+  const forceTabToggle = document.getElementById('forceTabToggle');
+  const forceTabCount = document.getElementById('forceTabCount');
+  if (!forceTabToggle?.checked) return null;
+  return clampTabCount(forceTabCount?.value);
+}
+
+// '일괄 입력 실행' — 저장된 데이터 소스에 맞춰 이동 횟수 자동 적용
 const btnExecute = document.getElementById('btnExecute');
 if (btnExecute) {
   btnExecute.addEventListener('click', () => {
-    const tabCount = parseInt(document.getElementById('customTabCount').value, 10) || 2;
-    injectData(tabCount);
+    chrome.storage.local.get(['savedCategory'], (res) => {
+      const guide = getSourceGuide(res.savedCategory || '');
+      const forcedTabCount = getForcedTabCount();
+      applySourceGuide(res.savedCategory || '');
+      injectData(forcedTabCount || guide.tabCount);
+    });
   });
 }
 
@@ -353,24 +485,6 @@ appendSegs.forEach((seg) => {
   });
 });
 
-// 이동 칸 수 pill (2회 / 4회 / 직접 지정)
-const tabPills = document.querySelectorAll('.pill-group .pill');
-const customTabRow = document.getElementById('customTabRow');
-const customTabSelect = document.getElementById('customTabCount');
-tabPills.forEach((pill) => {
-  pill.addEventListener('click', () => {
-    tabPills.forEach((p) => p.classList.remove('active'));
-    pill.classList.add('active');
-    const v = pill.dataset.tab;
-    if (v === 'custom') {
-      if (customTabRow) customTabRow.style.display = 'block';
-    } else {
-      if (customTabRow) customTabRow.style.display = 'none';
-      if (customTabSelect) customTabSelect.value = v;
-    }
-  });
-});
-
 // --- 옵션 사이드바 ---
 const optionsBtn = document.getElementById('optionsBtn');
 const optionsSidebar = document.getElementById('optionsSidebar');
@@ -383,6 +497,7 @@ function openOptions() {
 }
 
 function closeOptions() {
+  commitDirectPasteIfEnabled();
   optionsSidebar.classList.remove('open');
   optionsOverlay.classList.remove('open');
 }
@@ -420,6 +535,123 @@ chrome.storage.local.get(['speedSetting'], (res) => {
   });
 });
 
+// 데이터 직접 붙여넣기
+const directPasteToggle = document.getElementById('directPasteToggle');
+const directPasteInput = document.getElementById('directPasteInput');
+const directPasteControls = document.getElementById('directPasteControls');
+const directPasteStatus = document.getElementById('directPasteStatus');
+
+function parseDirectPasteRows(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.split('\t').map((cell) => cell.trim()).filter(Boolean).join(' '))
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function setDirectPasteStatus(text) {
+  if (directPasteStatus) directPasteStatus.textContent = text;
+}
+
+function applyDirectPasteState(enabled) {
+  if (directPasteToggle) directPasteToggle.checked = enabled;
+  if (directPasteInput) directPasteInput.disabled = !enabled;
+  if (directPasteControls) directPasteControls.classList.toggle('enabled', enabled);
+}
+
+function commitDirectPasteData() {
+  const rows = parseDirectPasteRows(directPasteInput?.value || '');
+  if (rows.length === 0) {
+    setDirectPasteStatus('0건 대기');
+    return;
+  }
+
+  chrome.storage.local.set({ savedArray: rows, savedCategory: '', savedSubject: '' }, () => {
+    chrome.action.setBadgeText({ text: String(rows.length) });
+    chrome.action.setBadgeBackgroundColor({ color: '#E66914' });
+    applyCategoryTitle('');
+    applySourceGuide('');
+    renderTable(rows);
+    setDirectPasteStatus(`${rows.length}건 반영됨`);
+  });
+}
+
+function commitDirectPasteIfEnabled() {
+  if (!directPasteToggle?.checked) return;
+  applyDirectPasteState(false);
+  chrome.storage.local.set({ directPasteEnabled: false });
+  commitDirectPasteData();
+}
+
+if (directPasteToggle) {
+  directPasteToggle.addEventListener('change', () => {
+    const enabled = directPasteToggle.checked;
+    applyDirectPasteState(enabled);
+    chrome.storage.local.set({ directPasteEnabled: enabled });
+
+    if (enabled) {
+      directPasteInput?.focus();
+      setDirectPasteStatus(`${parseDirectPasteRows(directPasteInput?.value || '').length}건 대기`);
+    } else {
+      commitDirectPasteData();
+    }
+  });
+}
+
+if (directPasteInput) {
+  directPasteInput.addEventListener('input', () => {
+    const rows = parseDirectPasteRows(directPasteInput.value);
+    setDirectPasteStatus(`${rows.length}건 대기`);
+    chrome.storage.local.set({ directPasteText: directPasteInput.value });
+  });
+}
+
+chrome.storage.local.get(['directPasteEnabled', 'directPasteText'], (res) => {
+  if (directPasteInput) directPasteInput.value = res.directPasteText || '';
+  applyDirectPasteState(Boolean(res.directPasteEnabled));
+  setDirectPasteStatus(`${parseDirectPasteRows(res.directPasteText || '').length}건 대기`);
+});
+
+// 탭수 강제 설정
+const forceTabToggle = document.getElementById('forceTabToggle');
+const forceTabCount = document.getElementById('forceTabCount');
+const forceTabControls = document.getElementById('forceTabControls');
+
+function applyForceTabState(enabled) {
+  if (forceTabToggle) forceTabToggle.checked = enabled;
+  if (forceTabCount) forceTabCount.disabled = !enabled;
+  if (forceTabControls) forceTabControls.classList.toggle('enabled', enabled);
+}
+
+if (forceTabToggle) {
+  forceTabToggle.addEventListener('change', () => {
+    const enabled = forceTabToggle.checked;
+    applyForceTabState(enabled);
+    chrome.storage.local.set({ forceTabEnabled: enabled });
+  });
+}
+
+if (forceTabCount) {
+  forceTabCount.addEventListener('input', () => {
+    const count = parseInt(forceTabCount.value, 10);
+    if (Number.isFinite(count)) chrome.storage.local.set({ forceTabCount: clampTabCount(count) });
+  });
+
+  forceTabCount.addEventListener('change', () => {
+    const count = clampTabCount(forceTabCount.value);
+    forceTabCount.value = String(count);
+    chrome.storage.local.set({ forceTabCount: count });
+  });
+}
+
+chrome.storage.local.get(['forceTabEnabled', 'forceTabCount'], (res) => {
+  const count = clampTabCount(res.forceTabCount ?? 2);
+  if (forceTabCount) forceTabCount.value = String(count);
+  applyForceTabState(Boolean(res.forceTabEnabled));
+});
+
 
 // ──────────────────────────────────────────────────────────────
 // 사이트에서 전송돼 저장된 데이터(savedArray)+카테고리(savedCategory)를 미리보기에 표시
@@ -427,8 +659,9 @@ chrome.storage.local.get(['speedSetting'], (res) => {
 
 // 패널을 열었을 때 저장된 데이터 표시
 function loadSavedData() {
-  chrome.storage.local.get(['savedArray', 'savedCategory'], (res) => {
-    applyCategoryTitle(res.savedCategory || '');
+  chrome.storage.local.get(['savedArray', 'savedCategory', 'savedSubject'], (res) => {
+    applyCategoryTitle(res.savedCategory || '', res.savedSubject || '');
+    applySourceGuide(res.savedCategory || '');
     renderTable(res.savedArray || []);
   });
 }
@@ -437,6 +670,11 @@ loadSavedData();
 // 패널이 열려 있는 동안 사이트에서 새 데이터가 들어오면 실시간 반영
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.savedCategory) applyCategoryTitle(changes.savedCategory.newValue || '');
+  if (changes.savedCategory || changes.savedSubject) {
+    chrome.storage.local.get(['savedCategory', 'savedSubject'], (res) => {
+      applyCategoryTitle(res.savedCategory || '', res.savedSubject || '');
+      applySourceGuide(res.savedCategory || '');
+    });
+  }
   if (changes.savedArray) renderTable(changes.savedArray.newValue || []);
 });

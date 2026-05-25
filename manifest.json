@@ -9,6 +9,7 @@
   "externally_connectable": {
     "matches": [
       "https://student-record-ai-editor.vercel.app/*",
+      "https://student-record-ai-editor-cxk5.vercel.app/*",
       "https://veryhungryface.github.io/student-record-ai-editor/*",
       "http://localhost/*"
     ]
