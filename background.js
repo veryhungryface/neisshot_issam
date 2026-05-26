@@ -22,6 +22,8 @@ function isAllowedSender(sender) {
   try {
     const u = new URL(sender.url || sender.origin || "");
     if (
+      u.origin === "https://issamgpt.com" ||
+      u.hostname.endsWith(".issamgpt.com") ||
       u.origin === "https://student-record-ai-editor.vercel.app" ||
       u.origin === "https://student-record-ai-editor-cxk5.vercel.app"
     ) {
