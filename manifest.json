@@ -4,7 +4,6 @@
   "version": "1.4",
   "description": "나이스(NEIS) 학생 데이터 일괄 입력 보조 도구",
   "permissions": ["sidePanel", "storage", "scripting", "activeTab"],
-  "host_permissions": ["<all_urls>"],
   "externally_connectable": {
     "matches": [
       "https://student-record-ai-editor.vercel.app/*",
