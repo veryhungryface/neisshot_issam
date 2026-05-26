@@ -2,7 +2,6 @@
   "manifest_version": 3,
   "name": "나이스입력도우미 by issamGPT",
   "version": "1.4",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu4SxyA3vts1yWU1DmKomoZPyPVWR47CdPny+WvBAz4jHQh1eF2oontJFxfq5NLOd/kPoPuhjOxSE2NIVZtr87iYhzFKhAiwhBXlqM1hZyFpCO9QLyx1mQFZ+RPTKRmsshIQ6ZpdZhdf4QHDAh2X2/8kDK7CeCDSDpSPZkEZcVmM2SMMHIUCD1cRuB432Nv05JrnbHUwiLEczrecKNm+7wsPNLl9ebAMRbPxvfVNtIke+kz4B30+hy0bXPlfjjHQjiODtIjszTguvlXDfXQrN/ABAXyCH5M0Vp6nKS78uBslQ5YWBLMzWP6103LKKbdz8PL1/mT4vAYHSNIugDZ9ViQIDAQAB",
   "description": "나이스(NEIS) 학생 데이터 일괄 입력 보조 도구",
   "permissions": ["sidePanel", "storage", "scripting", "activeTab"],
   "host_permissions": ["<all_urls>"],
