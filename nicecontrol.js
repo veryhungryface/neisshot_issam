@@ -9,8 +9,26 @@
 //  · sidepanel.js 뒤에 로드되어 showModal(message, onOk)을 함께 사용한다.
 // ──────────────────────────────────────────────────────────────
 
-const NC_NEIS_TAB_PATTERN = 'https://*.neis.go.kr/*';
-const NC_FALLBACK_HOME = 'https://www.neis.go.kr/';
+// 대상 사이트 정의 — 테스트 모드에서는 나이스 대신 i-scream.co.kr 로 동일 로직을 검증한다.
+const NC_SITES = {
+  neis: {
+    key: 'neis',
+    patterns: ['https://neis.go.kr/*', 'https://*.neis.go.kr/*'],
+    home: 'https://www.neis.go.kr/',
+    name: '나이스',
+  },
+  test: {
+    key: 'test',
+    patterns: [
+      'https://i-scream.co.kr/*',
+      'https://*.i-scream.co.kr/*',
+      'http://i-scream.co.kr/*',
+      'http://*.i-scream.co.kr/*',
+    ],
+    home: 'https://www.i-scream.co.kr/',
+    name: '아이스크림(테스트)',
+  },
+};
 
 // 시·도 교육청별 나이스 도메인 접두어 — 미선택 시 통합 포털로 이동
 const NC_REGIONS = [
@@ -47,9 +65,14 @@ const ncGrid = document.getElementById('ncGrid');
 const ncMenuInput = document.getElementById('ncMenuInput');
 const ncMenuStatus = document.getElementById('ncMenuStatus');
 const ncRegionSelect = document.getElementById('ncRegionSelect');
+const ncTestToggle = document.getElementById('ncTestToggle');
+
+function ncActiveSite() {
+  return ncTestToggle && ncTestToggle.checked ? NC_SITES.test : NC_SITES.neis;
+}
 
 function ncRegionOrigin(code) {
-  return code ? `https://${code}.neis.go.kr/` : NC_FALLBACK_HOME;
+  return code ? `https://${code}.neis.go.kr/` : NC_SITES.neis.home;
 }
 
 // 메뉴 url 이 절대 주소면 그대로, 경로(/...)면 origin 기준으로 합쳐 목표 URL 을 만든다.
@@ -77,11 +100,12 @@ async function ncIsLoggedIn(originUrl) {
 
 // ②·③ 탭 탐색 + 제어 — 명세서의 핵심 흐름
 async function ncOpenMenu(menu) {
+  const site = ncActiveSite();
   const regionCode = ncRegionSelect ? ncRegionSelect.value : '';
-  let origin = ncRegionOrigin(regionCode);
+  let origin = site.key === 'neis' ? ncRegionOrigin(regionCode) : site.home;
 
-  // 열려 있는 나이스 탭 전체 스캔 (모든 창 대상)
-  const tabs = await chrome.tabs.query({ url: NC_NEIS_TAB_PATTERN });
+  // 열려 있는 대상 사이트 탭 전체 스캔 (모든 창 대상)
+  const tabs = await chrome.tabs.query({ url: site.patterns });
 
   if (tabs.length > 0) {
     // 다중 탭이 열려 있으면 첫 번째 탭 기준으로 재활용 (명세서 5. 예외 처리)
@@ -97,11 +121,11 @@ async function ncOpenMenu(menu) {
     return;
   }
 
-  // 나이스 탭이 없음 → 로그인 상태 검증
+  // 대상 사이트 탭이 없음 → 로그인 상태 검증
   const loggedIn = await ncIsLoggedIn(origin);
   if (!loggedIn) {
     showModal(
-      '나이스 로그인이 필요합니다.\n확인을 누르면 나이스 로그인 화면을 새 탭으로 엽니다.',
+      `${site.name} 로그인이 필요합니다.\n확인을 누르면 ${site.name} 화면을 새 탭으로 엽니다.`,
       () => { chrome.tabs.create({ url: origin, active: true }); }
     );
     return;
@@ -172,10 +196,17 @@ if (ncRegionSelect) {
   });
 }
 
+if (ncTestToggle) {
+  ncTestToggle.addEventListener('change', () => {
+    chrome.storage.local.set({ ncTestMode: ncTestToggle.checked });
+  });
+}
+
 // 저장된 설정 로드 후 초기 렌더링
-chrome.storage.local.get(['ncMenuText', 'ncRegion'], (res) => {
+chrome.storage.local.get(['ncMenuText', 'ncRegion', 'ncTestMode'], (res) => {
   if (ncMenuInput) ncMenuInput.value = res.ncMenuText || '';
   if (ncRegionSelect) ncRegionSelect.value = res.ncRegion || '';
+  if (ncTestToggle) ncTestToggle.checked = Boolean(res.ncTestMode);
   const menus = ncParseMenus(res.ncMenuText || '');
   ncRenderMenus(menus);
   ncSetStatus(menus.length);

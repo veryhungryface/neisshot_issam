@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "나이스입력도우미 by issamGPT",
-  "version": "1.5",
+  "version": "1.5.1",
   "description": "나이스(NEIS) 학생 데이터 일괄 입력 보조 도구",
   "permissions": ["sidePanel", "storage", "scripting", "activeTab", "tabs", "cookies"],
   "host_permissions": [
     "https://issamgpt.com/*",
     "https://*.issamgpt.com/*",
     "https://neis.go.kr/*",
-    "https://*.neis.go.kr/*"
+    "https://*.neis.go.kr/*",
+    "https://i-scream.co.kr/*",
+    "https://*.i-scream.co.kr/*"
   ],
   "externally_connectable": {
     "matches": [
