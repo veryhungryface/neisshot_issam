@@ -129,6 +129,54 @@
       word-break: keep-all;
     }
 
+    /* ===== NiceControl 나이스 바로가기 ===== */
+    .nc-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .nc-btn {
+      flex: 1 1 calc(50% - 4px);
+      min-width: 0;
+      padding: 11px 10px;
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 700;
+      font-family: inherit;
+      line-height: 1.35;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .nc-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-weak);
+    }
+
+    .nc-select {
+      flex-shrink: 0;
+      padding: 9px 10px;
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 700;
+      font-family: inherit;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+    }
+
+    .nc-select:focus {
+      border-color: var(--accent);
+    }
+
     /* ===== 미리보기 ===== */
     .preview-head {
       display: flex;
@@ -739,6 +787,13 @@
       <p class="app-sub">사이트에서 전송된 데이터를 확인하고 NEIS에 한 번에 입력해 드립니다.</p>
     </div>
 
+    <!-- NiceControl: 나이스 바로가기 (퀵 런처) -->
+    <div class="section">
+      <div class="label">나이스 바로가기</div>
+      <div class="nc-grid" id="ncGrid"></div>
+      <div class="hint">열려 있는 나이스 탭이 있으면 그 탭을 앞으로 가져와 이동하고, 없으면 새 탭으로 엽니다. 바로가기는 ⚙ 설정에서 추가할 수 있습니다.</div>
+    </div>
+
     <!-- 미리보기 (사이트에서 받은 데이터) -->
     <div class="section preview-section">
       <div class="preview-head">
@@ -873,6 +928,22 @@
           <span class="setting-desc">회 이동</span>
         </div>
       </div>
+
+      <div class="settings-block">
+        <div class="settings-heading">4) 나이스 바로가기 편집</div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">소속 교육청</div>
+            <div class="setting-desc">열려 있는 나이스 탭이 없을 때 새 탭으로 열 나이스 주소를 정합니다.</div>
+          </div>
+          <select id="ncRegionSelect" class="nc-select"></select>
+        </div>
+        <div style="margin-top: 12px;">
+          <textarea id="ncMenuInput" class="paste-input" placeholder="이름 | 주소  (한 줄에 하나)&#10;예) 복무 | https://goe.neis.go.kr/..."></textarea>
+          <div class="paste-status" id="ncMenuStatus">내 바로가기 0개</div>
+          <div class="setting-desc" style="margin-top: 6px;">나이스에서 원하는 메뉴 화면으로 이동한 뒤 주소창의 주소를 복사해 붙여넣으면, 해당 메뉴로 바로 이동하는 버튼이 만들어집니다.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -886,6 +957,7 @@
   </div>
 
   <script src="sidepanel.js"></script>
+  <script src="nicecontrol.js"></script>
 </body>
 
 </html>

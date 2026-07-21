@@ -5,17 +5,26 @@ const rowCountDisplay = document.getElementById('rowCount');
 const nsModalOverlay = document.getElementById('nsModalOverlay');
 const nsModalMsg = document.getElementById('nsModalMsg');
 const nsModalOk = document.getElementById('nsModalOk');
-function showModal(message) {
-  if (!nsModalOverlay || !nsModalMsg) { window.alert(message); return; }
+let nsModalOnOk = null; // '확인' 클릭 시 실행할 콜백 (오버레이 클릭 취소 시에는 실행 안 함)
+function showModal(message, onOk) {
+  if (!nsModalOverlay || !nsModalMsg) {
+    window.alert(message);
+    if (typeof onOk === 'function') onOk();
+    return;
+  }
   nsModalMsg.textContent = message;
+  nsModalOnOk = typeof onOk === 'function' ? onOk : null;
   nsModalOverlay.classList.add('open');
 }
-function hideModal() {
+function hideModal(runOk = false) {
   if (nsModalOverlay) nsModalOverlay.classList.remove('open');
+  const cb = nsModalOnOk;
+  nsModalOnOk = null;
+  if (runOk && cb) cb();
 }
-if (nsModalOk) nsModalOk.addEventListener('click', hideModal);
+if (nsModalOk) nsModalOk.addEventListener('click', () => hideModal(true));
 if (nsModalOverlay) nsModalOverlay.addEventListener('click', (e) => {
-  if (e.target === nsModalOverlay) hideModal();
+  if (e.target === nsModalOverlay) hideModal(false);
 });
 
 // 사이트에서 함께 넘어온 카테고리 → 미리보기 제목 매핑
