@@ -345,6 +345,64 @@
       cursor: not-allowed;
     }
 
+    /* ===== 개발용 ===== */
+    .dev-tools {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1.5px dashed #b8bec7;
+      border-radius: 12px;
+      flex-shrink: 0;
+    }
+
+    .dev-tools[hidden] {
+      display: none;
+    }
+
+    .dev-tools-label {
+      margin-bottom: 6px;
+      color: #8a919c;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .btn-dev {
+      width: 100%;
+      padding: 10px;
+      border: 1.5px solid var(--accent);
+      border-radius: 10px;
+      background: #fff;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .btn-dev:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+
+    .btn-dev-sub {
+      margin-top: 6px;
+      border-style: dashed;
+      color: #374151;
+      font-weight: 600;
+    }
+
+    .dev-tools-status {
+      margin-top: 6px;
+      white-space: pre-line;
+      color: #6b7280;
+      font-size: 12px;
+      line-height: 1.4;
+      word-break: keep-all;
+    }
+
+    .dev-tools-status:empty {
+      display: none;
+    }
+
     .exec-caution {
       margin-top: 4px;
       border: 1.5px solid #f2b987;
@@ -793,6 +851,14 @@
       <button type="button" class="btn-reset" id="btnReset">초기화</button>
       <button type="button" class="btn-exec" id="btnExecute" disabled>일괄 입력 실행</button>
     </div>
+
+    <!-- [개발용] 개발 설치에서만 보임 (dev-tools.js) -->
+    <div class="dev-tools" id="devTools" hidden>
+      <div class="dev-tools-label">개발용</div>
+      <button type="button" class="btn-dev" id="btnDevQuickQuery">행특 조회 → 임시 데이터 입력 (학년·반 비어 있으면 3-1)</button>
+      <button type="button" class="btn-dev btn-dev-sub" id="btnDevSaveDiag">지금 화면 진단 저장 (개인정보 가림)</button>
+      <div class="dev-tools-status" id="devQuickQueryStatus"></div>
+    </div>
   </div>
 
   <!-- 옵션 오버레이 -->
@@ -886,6 +952,7 @@
   </div>
 
   <script src="sidepanel.js"></script>
+  <script src="dev-tools.js"></script>
 </body>
 
 </html>

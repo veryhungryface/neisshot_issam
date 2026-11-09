@@ -137,8 +137,12 @@ function renderTable(lines) {
   });
 }
 
-// --- 나이스 입력 실행 함수 (Tab 방식) ---
-async function injectData(tabCount) {
+// --- 나이스 입력 실행 함수 ---
+//  · 기본: 표 구조(HTML)를 읽어 같은 열의 다음 행 입력칸에 직접 입력
+//  · 표가 아니거나 탭수 강제 설정이 켜져 있으면 Tab 방식
+//  · saveNote: 완료 팝업 끝줄 (개발용 임시 입력은 '저장하지 마세요'로 바꿔 부른다)
+//  · 입력 결과 요약 { total, count, skipped, modes, noCursor } 을 돌려준다 (개발용 진단 저장이 사용)
+async function injectData(tabCount, { forceTab = false, saveNote = '⚠️ 저장 버튼을 눌러 저장해주세요!' } = {}) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
 
@@ -159,14 +163,16 @@ async function injectData(tabCount) {
   const selectedSpeed = document.querySelector('input[name="speed"]:checked')?.value || 'normal';
   const delays = speedPresets[selectedSpeed] || speedPresets.normal;
 
-  chrome.storage.local.get(['savedArray'], (res) => {
+  // 입력이 끝날 때까지 기다릴 수 있도록 Promise 를 반환한다 (개발용 버튼이 사용)
+  return chrome.storage.local.get(['savedArray']).then((res) => {
     const dataList = res.savedArray || [];
     if (dataList.length === 0) { showModal("데이터가 없습니다."); return; }
 
-    chrome.scripting.executeScript({
+    return chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      func: async (list, tabsPerRow, appendCfg, delayConfig) => {
+      func: async (list, tabsPerRow, appendCfg, delayConfig, useTabMode) => {
         const TABS_PER_ROW = tabsPerRow;
+        const USE_TAB_MODE = useTabMode;
         const APPEND_CONFIG = appendCfg;
         const DELAYS = delayConfig;
         const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -268,7 +274,7 @@ async function injectData(tabCount) {
           return { success: false, error: 'NO_CURSOR' };
         }
 
-        console.log('✅ 활성화된 입력 요소 발견! Tab 방식으로 입력 시작');
+        console.log('✅ 활성화된 입력 요소 발견! 입력 시작');
 
         // Tab 키 이벤트 헬퍼. 일반 웹폼은 synthetic Tab으로 포커스가 이동하지 않아 직접 다음 입력칸을 잡는다.
         const pressTab = async (element) => {
@@ -292,97 +298,185 @@ async function injectData(tabCount) {
           return focusNextInput(startInput || target);
         };
 
-        let currentInput = activeInput;
+        // 값 입력 (APPEND_CONFIG 반영 → 네이티브 setter → input/change/blur 이벤트)
+        const fillInput = async (input, textData, i) => {
+          // 확실히 포커스
+          input.focus();
+          await wait(DELAYS.focus);
 
-        for (let i = 0; i < list.length; i++) {
-          const textData = list[i];
-
-          // 첫 번째가 아니면 Tab으로 다음 행 이동
-          if (i > 0) {
-            console.log(`${i}번: Tab ${TABS_PER_ROW}회로 다음 행 이동...`);
-
-            // 설정된 횟수만큼 Tab
-            for (let t = 0; t < TABS_PER_ROW; t++) {
-              const movedInput = await pressTab(currentInput);
-              if (movedInput) currentInput = movedInput;
-              await wait(DELAYS.tab);
-            }
-            await wait(DELAYS.afterTab);
-
-            // 새로 활성화된 입력 요소 찾기 (textarea 또는 input)
-            let newInput = getActiveInput() || currentInput;
-
-            if (newInput) {
-              currentInput = newInput;
-              console.log(`${i}번: Tab으로 이동 성공!`);
-            } else {
-              console.log(`${i}번: Tab 이동 실패, 입력 요소를 찾지 못함`);
-            }
-          }
-
-          // 현재 입력 요소에 입력 (textarea 또는 input)
-          if (isEditableInput(currentInput)) {
-            console.log(`${i}번: ${currentInput.tagName} 발견, 입력 시작...`);
-
-            // 확실히 포커스
-            currentInput.focus();
-            await wait(DELAYS.focus);
-
-            // APPEND_CONFIG에 따라 기존 텍스트 처리
-            let finalText = textData;
-            if (APPEND_CONFIG.type !== 'none') {
-              const existingText = (currentInput.value || currentInput.textContent || '').trim();
-              if (existingText) {
-                if (APPEND_CONFIG.type === 'newline') {
-                  finalText = existingText + '\n' + textData;
-                } else if (APPEND_CONFIG.type === 'custom') {
-                  finalText = existingText + APPEND_CONFIG.separator + textData;
-                }
-                console.log(`${i}번: 기존 텍스트 뒤에 추가 (${APPEND_CONFIG.type})`);
+          // APPEND_CONFIG에 따라 기존 텍스트 처리
+          let finalText = textData;
+          if (APPEND_CONFIG.type !== 'none') {
+            const existingText = (input.value || input.textContent || '').trim();
+            if (existingText) {
+              if (APPEND_CONFIG.type === 'newline') {
+                finalText = existingText + '\n' + textData;
+              } else if (APPEND_CONFIG.type === 'custom') {
+                finalText = existingText + APPEND_CONFIG.separator + textData;
               }
-            } else {
-              currentInput.select && currentInput.select();
+              console.log(`${i}번: 기존 텍스트 뒤에 추가 (${APPEND_CONFIG.type})`);
             }
-
-            if (currentInput.tagName === 'TEXTAREA' || currentInput.tagName === 'INPUT') {
-              currentInput.value = finalText;
-
-              // 네이티브 setter (textarea와 input 모두 지원)
-              const setter = currentInput.tagName === 'TEXTAREA'
-                ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
-                : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-              if (setter) setter.call(currentInput, finalText);
-            } else {
-              currentInput.textContent = finalText;
-            }
-
-            // 이벤트 발생
-            currentInput.dispatchEvent(new Event('input', { bubbles: true }));
-            currentInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-            // blur 이벤트로 값 확정
-            await wait(DELAYS.blur);
-            currentInput.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
-
-            successCount++;
-            console.log(`✅ ${i}번 입력 완료: "${textData.substring(0, 20)}..."`);
           } else {
-            console.warn(`⚠️ ${i}번: 입력 요소 없음, 스킵`);
+            input.select && input.select();
           }
 
-          // 다음 입력 전 대기 (값 확정 시간 부여)
-          await wait(DELAYS.next);
+          if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+            input.value = finalText;
+
+            // 네이티브 setter (textarea와 input 모두 지원)
+            const setter = input.tagName === 'TEXTAREA'
+              ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+              : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (setter) setter.call(input, finalText);
+          } else {
+            input.textContent = finalText;
+          }
+
+          // 이벤트 발생
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+
+          // blur 이벤트로 값 확정
+          await wait(DELAYS.blur);
+          input.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+          console.log(`✅ ${i}번 입력 완료: "${textData.substring(0, 20)}..."`);
+        };
+
+        // ── 표 구조(HTML) 방식 ──
+        //  커서가 있는 칸의 그리드·행·열을 찾고, 같은 열의 다음 행 입력칸에 직접 넣는다.
+        //  Tab 순서(행 안의 입력칸 수, 체크박스 등)에 영향을 받지 않는다.
+        const EDITOR_SELECTOR = 'textarea, input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]), [contenteditable="true"], [role="textbox"]';
+        const findGridContext = (input) => {
+          const grid = input.closest('[role="grid"], [role="treegrid"], .cl-grid');
+          const row = input.closest('[role="row"], .cl-grid-row');
+          const cell = input.closest('[role="gridcell"], .cl-grid-cell');
+          if (!grid || !row || !cell || !grid.contains(row)) return null;
+
+          const rowsOf = () => Array.from(grid.querySelectorAll('[role="row"], .cl-grid-row'))
+            .filter((r) => r.querySelector('[role="gridcell"], .cl-grid-cell') && !r.querySelector('[role="columnheader"]'));
+          // 열 식별: data-cellindex → aria-colindex → 행 안에서의 칸 순서
+          const cellsOf = (r) => Array.from(r.querySelectorAll('[role="gridcell"], .cl-grid-cell'))
+            .filter((c) => c.closest('[role="row"], .cl-grid-row') === r);
+          const colAttr = cell.hasAttribute('data-cellindex') ? 'data-cellindex'
+            : cell.hasAttribute('aria-colindex') ? 'aria-colindex' : null;
+          const colValue = colAttr ? cell.getAttribute(colAttr) : String(cellsOf(row).indexOf(cell));
+          const cellAt = (r) => (colAttr
+            ? cellsOf(r).find((c) => c.getAttribute(colAttr) === colValue)
+            : cellsOf(r)[Number(colValue)]);
+          // 행 번호: aria-rowindex (가상 스크롤로 행이 다시 그려져도 유지됨) → 없으면 DOM 순서
+          const useRowIndex = row.hasAttribute('aria-rowindex');
+          const rowNo = (r) => (useRowIndex ? Number(r.getAttribute('aria-rowindex')) : rowsOf().indexOf(r));
+          const startNo = rowNo(row);
+          if (!Number.isFinite(startNo) || startNo < 0) return null;
+
+          // 화면에 아직 그려지지 않은 행(가상 스크롤)은 스크롤해서 그리게 한다
+          const scroller = (() => {
+            for (let el = row.parentElement; el && el !== grid.parentElement; el = el.parentElement) {
+              const st = window.getComputedStyle(el);
+              if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight) return el;
+            }
+            return null;
+          })();
+          const findRow = async (no) => {
+            for (let attempt = 0; attempt < 30; attempt++) {
+              const r = rowsOf().find((x) => rowNo(x) === no);
+              if (r) return r;
+              if (!scroller || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) return null;
+              scroller.scrollTop += Math.max(row.offsetHeight, 20);
+              await wait(Math.max(30, DELAYS.tab));
+            }
+            return null;
+          };
+          // 칸 안의 편집기. 선택해야 편집기가 생기는 그리드는 칸을 클릭해서 연다.
+          const editorIn = async (r) => {
+            const c = cellAt(r);
+            if (!c) return null;
+            let ed = Array.from(c.querySelectorAll(EDITOR_SELECTOR)).find(isEditableInput);
+            if (ed) return ed;
+            c.scrollIntoView({ block: 'center' });
+            c.click();
+            await wait(Math.max(30, DELAYS.tab));
+            c.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            await wait(Math.max(30, DELAYS.afterTab));
+            ed = Array.from(c.querySelectorAll(EDITOR_SELECTOR)).find(isEditableInput)
+              || (isEditableInput(document.activeElement) && r.contains(document.activeElement) ? document.activeElement : null);
+            return ed || null;
+          };
+          return { startNo, findRow, editorIn };
+        };
+
+        const gridCtx = USE_TAB_MODE ? null : findGridContext(activeInput);
+        let mode = gridCtx ? 'grid' : 'tab';
+        console.log(`입력 방식: ${mode === 'grid' ? '표 구조(HTML)' : `Tab ${TABS_PER_ROW}회`}`);
+        let skipped = 0;
+
+        if (gridCtx) {
+          for (let i = 0; i < list.length; i++) {
+            const row = i === 0 ? activeInput.closest('[role="row"], .cl-grid-row') : await gridCtx.findRow(gridCtx.startNo + i);
+            if (!row) {
+              console.warn(`⚠️ ${i}번: ${list.length - i}건은 대응하는 행이 없어 입력하지 않음`);
+              break;
+            }
+            const input = i === 0 ? activeInput : await gridCtx.editorIn(row);
+            if (input) {
+              input.scrollIntoView({ block: 'nearest' });
+              await fillInput(input, list[i], i);
+              successCount++;
+            } else {
+              // 읽기 전용 행(학적변동 등)은 건너뛰되 데이터는 행과 1:1로 맞춘다
+              skipped++;
+              console.warn(`⚠️ ${i}번: 편집할 수 없는 행, 스킵`);
+            }
+            await wait(DELAYS.next);
+          }
+        } else {
+          let currentInput = activeInput;
+
+          for (let i = 0; i < list.length; i++) {
+            const textData = list[i];
+
+            // 첫 번째가 아니면 Tab으로 다음 행 이동
+            if (i > 0) {
+              console.log(`${i}번: Tab ${TABS_PER_ROW}회로 다음 행 이동...`);
+
+              // 설정된 횟수만큼 Tab
+              for (let t = 0; t < TABS_PER_ROW; t++) {
+                const movedInput = await pressTab(currentInput);
+                if (movedInput) currentInput = movedInput;
+                await wait(DELAYS.tab);
+              }
+              await wait(DELAYS.afterTab);
+
+              // 새로 활성화된 입력 요소 찾기 (textarea 또는 input)
+              const newInput = getActiveInput() || currentInput;
+              if (newInput) currentInput = newInput;
+            }
+
+            // 현재 입력 요소에 입력 (textarea 또는 input)
+            if (isEditableInput(currentInput)) {
+              await fillInput(currentInput, textData, i);
+              successCount++;
+            } else {
+              skipped++;
+              console.warn(`⚠️ ${i}번: 입력 요소 없음, 스킵`);
+            }
+
+            // 다음 입력 전 대기 (값 확정 시간 부여)
+            await wait(DELAYS.next);
+          }
         }
 
-        return { success: true, total: list.length, count: successCount };
+        return { success: true, total: list.length, count: successCount, skipped, mode };
       },
-      args: [dataList, tabCount, appendConfig, delays]
+      args: [dataList, tabCount, appendConfig, delays, forceTab]
     }).then((results) => {
       // 모든 프레임의 결과 확인
       let hasSuccess = false;
       let totalCount = 0;
       let successCount = 0;
+      let skippedCount = 0;
       let allNoCursor = true;
+      const modes = [];
 
       if (results) {
         for (const r of results) {
@@ -391,6 +485,8 @@ async function injectData(tabCount) {
               hasSuccess = true;
               totalCount = r.result.total;
               successCount += r.result.count;
+              skippedCount += r.result.skipped || 0;
+              if (r.result.mode) modes.push(r.result.mode);
               allNoCursor = false;
             } else if (r.result.error !== 'NO_CURSOR') {
               allNoCursor = false;
@@ -401,7 +497,8 @@ async function injectData(tabCount) {
 
       if (hasSuccess) {
         chrome.action.setBadgeText({ text: '' }); // 입력 완료 → 아이콘 배지 정리
-        showModal(`${totalCount}명 중 ${successCount}건 입력 완료\n\n⚠️ 저장 버튼을 눌러 저장해주세요!`);
+        const skippedText = skippedCount ? `\n(입력할 수 없는 칸 ${skippedCount}건 건너뜀)` : '';
+        showModal(`${totalCount}명 중 ${successCount}건 입력 완료${skippedText}\n\n${saveNote}`);
       } else if (allNoCursor) {
         showModal(
           '⚠️ 커서가 활성화되지 않았습니다!\n\n' +
@@ -412,9 +509,11 @@ async function injectData(tabCount) {
           '※ 반드시 입력칸을 클릭한 상태에서 버튼을 눌러야 합니다.'
         );
       }
+      return { total: totalCount, count: successCount, skipped: skippedCount, modes, noCursor: !hasSuccess && allNoCursor };
     }).catch((err) => {
       console.error('executeScript 오류:', err);
       showModal('⚠️ 나이스 페이지에서 실행해주세요!');
+      return { total: 0, count: 0, skipped: 0, modes: [], error: String(err?.message || err) };
     });
   });
 }
@@ -467,7 +566,7 @@ if (btnExecute) {
       const guide = getSourceGuide(res.savedCategory || '');
       const forcedTabCount = getForcedTabCount();
       applySourceGuide(res.savedCategory || '');
-      injectData(forcedTabCount || guide.tabCount);
+      injectData(forcedTabCount || guide.tabCount, { forceTab: forcedTabCount !== null });
     });
   });
 }

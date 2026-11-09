@@ -8,7 +8,8 @@
     "https://issamgpt.com/*",
     "https://*.issamgpt.com/*",
     "https://neis.go.kr/*",
-    "https://*.neis.go.kr/*"
+    "https://*.neis.go.kr/*",
+    "http://127.0.0.1/*"
   ],
   "externally_connectable": {
     "matches": [
