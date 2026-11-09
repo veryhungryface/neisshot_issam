@@ -11,6 +11,9 @@
 //   · 2차인증 번호는 사람이 직접 넣고, 스크립트는 창이 닫힐 때까지 기다린다
 //   · 중간에 멈추거나 입력이 모자라면 화면 구조를 진단 파일(JSON)로 내려받는다
 //     (학생 이름·입력값·상단 사용자 정보 등은 ▒▒▒ 로 가림, 밖으로 자동 전송하지 않음)
+//   · '단계별 화면 구조 수집' 버튼은 같은 동작을 하면서 단계마다(메가메뉴, 왼쪽 메뉴, 2차인증,
+//     화면 열림, 목록, 조회 결과, 입력 후/멈춘 곳) 화면 구조를 모아 파일 하나로 저장한다.
+//     VPN 을 켜면 인터넷이 끊기는 학교 PC에서 VPN 을 켠 채 한 번 돌리고, 끈 뒤 그 파일만 전달하는 용도.
 // ──────────────────────────────────────────────────────────────
 (() => {
   const IS_DEV_INSTALL = !('update_url' in chrome.runtime.getManifest());
@@ -24,6 +27,7 @@
   const devTools = document.getElementById('devTools');
   const btn = document.getElementById('btnDevQuickQuery');
   const diagBtn = document.getElementById('btnDevSaveDiag');
+  const capBtn = document.getElementById('btnDevStepCapture');
   const status = document.getElementById('devQuickQueryStatus');
   if (!IS_DEV_INSTALL || !devTools || !btn) return;
   devTools.hidden = false;
@@ -34,16 +38,27 @@
   const urlPath = (url) => { try { const u = new URL(url); return u.origin + u.pathname; } catch { return ''; } };
 
   // 페이지 안에서 실행되는 함수 (chrome.scripting 으로 모든 프레임에 주입되므로 바깥 변수를 쓰지 않는다)
-  async function runNeisQuery(conds, screenName, T) {
+  async function runNeisQuery(conds, screenName, T, capture) {
     let step = '시작';
     let stepNo = 0;
+    const t0 = Date.now();
+    // 단계별 걸린 시간 (학교 망에서 어느 단계가 느린지 보려고 남긴다)
+    const timeline = [];
     // 알림창 내용은 학생 이름 등이 들어 있을 수 있어 오류 문구와 따로 돌려준다 (진단 파일에는 넣지 않음)
     let dialogText = '';
     const dialogError = (d, msg) => {
       dialogText = text(d).slice(0, 80);
       return new Error(`${msg} (창 이름: ${d.getAttribute('aria-label') || '없음'})`);
     };
-    const at = (no, name) => { stepNo = no; step = name; };
+    const at = (no, name) => { stepNo = no; step = name; timeline.push({ 단계번호: no, 단계: name, ms: Date.now() - t0 }); };
+    // 단계별 수집: 사이드패널에 지금 화면 구조를 저장해 달라고 요청하고 끝날 때까지 기다린다
+    // (수집은 사이드패널이 모든 프레임에서 하므로 메뉴와 화면이 다른 프레임에 있어도 함께 남는다)
+    const snap = async (name) => {
+      if (!capture) return;
+      try {
+        await chrome.runtime.sendMessage({ type: 'ns-dev-snap', name, stepNo, ms: Date.now() - t0 });
+      } catch { /* 수집 실패는 진행에 영향을 주지 않는다 */ }
+    };
 
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const waitFor = async (fn, what, timeout = T.step, interval = 100) => {
@@ -78,6 +93,7 @@
         const list = lists.find((l) => l.getAttribute('aria-label') === name) || lists[lists.length - 1];
         return list && [...list.querySelectorAll('[role=option]')].find((o) => text(o) === value);
       }, `${name}=${value} 항목`);
+      await snap(`목록 펼침 (${name})`);
       opt.click();
       await waitFor(() => box.getAttribute('aria-label') === `${name}, ${value}`, `${name} 선택 반영`);
     };
@@ -111,6 +127,7 @@
         const link = li.querySelector('a') || li;
         if (link.getAttribute('aria-expanded') !== 'true') link.click();
         folder = await waitFor(megaFolder, '메가메뉴 폴더', T.roleMenu).catch(() => null);
+        await snap(`메가메뉴 (${roleLabel(li)})`);
         if (folder) break;
       }
       if (!folder) {
@@ -120,19 +137,35 @@
 
       // 3) 왼쪽 화면 메뉴의 화면 (이미 열려 있으면 그 탭으로 전환됨)
       at(3, '왼쪽 화면 메뉴');
-      (await waitFor(() => [...document.querySelectorAll('.rolemenu a.cl-leaf, a.cl-sidenavigation-item.cl-leaf')]
-        .find((a) => visible(a) && named(a, screenName)), '왼쪽 화면 메뉴')).click();
+      const leaf = await waitFor(() => [...document.querySelectorAll('.rolemenu a.cl-leaf, a.cl-sidenavigation-item.cl-leaf')]
+        .find((a) => visible(a) && named(a, screenName)), '왼쪽 화면 메뉴');
+      await snap('왼쪽 메뉴');
+      leaf.click();
 
       // 4) 화면 탭이 선택되거나 2차인증이 뜰 때까지. 2차인증은 사람이 입력할 때까지 대기 (최대 3분)
       at(4, '화면 열기 / 2차인증');
       const selectedTab = () => document.querySelector(`[role=tab][aria-label="선택됨, ${screenName}"]`);
-      await waitFor(() => otpDialog() || selectedTab(), '화면 또는 2차인증', T.screen);
-      const otp = otpDialog();
-      if (otp) await waitFor(() => !otp.isConnected || !visible(otp), '2차인증 입력', T.otp, 300);
-      const panel = await waitFor(() => {
+      //    2차인증은 화면 탭이 먼저 선택된 뒤에 뜰 수도 있어, 화면이 준비될 때까지 계속 살핀다.
+      //    인증을 기다린 시간은 화면 대기 시간에서 빼지 않는다 (사람이 늦게 넣어도 실패하지 않게).
+      const readyPanel = () => {
         const p = activePanel();
         return selectedTab() && p && comboIn(p, '반') && !loadmaskVisible() && !otpDialog() ? p : null;
-      }, `${screenName} 화면`, T.screen);
+      };
+      let panel = null;
+      let otpSnapped = false;
+      let end = Date.now() + T.screen;
+      while (!(panel = readyPanel())) {
+        const otp = otpDialog();
+        if (otp) {
+          if (!otpSnapped) { otpSnapped = true; await snap('2차인증 창'); }
+          await waitFor(() => !otp.isConnected || !visible(otp), '2차인증 입력', T.otp, 300);
+          end = Date.now() + T.screen;
+          continue;
+        }
+        if (Date.now() > end) throw new Error(`시간 초과: ${selectedTab() ? `${screenName} 화면` : '화면 또는 2차인증'}`);
+        await wait(100);
+      }
+      await snap('화면 열림');
 
       // 5) 조회조건: 학년/반 → 조회
       //    정식 나이스는 담임 역할로 들어가면 학년·반이 이미 골라져 있으므로 그 값을 그대로 쓴다.
@@ -175,6 +208,7 @@
       } finally {
         mo.disconnect();
       }
+      await snap('조회 결과');
 
       // 6) 첫 번째 입력 가능한 학생 칸 강조 (일괄 입력 실행이 이 칸부터 시작)
       //    사이드패널이 키보드 포커스를 쥐고 있어 커서가 그려지지 않으므로 테두리로 강조한다.
@@ -203,9 +237,10 @@
         return cell ? cell.getAttribute('aria-label').replace(/^\d+행 (마지막 행 )?성명 /, '').trim() : '';
       });
       const readonlyRows = rows.filter((r) => !editorOf(r)).length;
-      return { ok: true, stepNo: 8, step: '완료', names, readonlyRows, ...used };
+      at(8, '완료');
+      return { ok: true, stepNo: 8, step: '완료', names, readonlyRows, timeline, ...used };
     } catch (e) {
-      return { ok: false, stepNo, step, error: e.message, dialogText };
+      return { ok: false, stepNo, step, error: e.message, dialogText, timeline };
     }
   }
 
@@ -370,39 +405,68 @@
     return { summary, regions, 잘림: size > LIMIT };
   }
 
-  // 모든 프레임에서 진단 정보를 모아 JSON 파일로 내려받는다 (새 권한 없이 사이드패널에서 직접 저장)
-  async function saveDiagnostics(tab, info) {
-    let frames;
+  // 모든 프레임에서 진단 정보를 모은다
+  async function collectFrames(tabId) {
     try {
-      const res = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: collectNeisDiag });
-      frames = res.map((f) => ({ frameId: f.frameId, ...(f.result || { 오류: '결과 없음' }) }));
+      const res = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: collectNeisDiag });
+      return res.map((f) => ({ frameId: f.frameId, ...(f.result || { 오류: '결과 없음' }) }));
     } catch (e) {
-      frames = [{ 오류: `수집 실패: ${e.message}` }];
+      return [{ 오류: `수집 실패: ${e.message}` }];
     }
-    const now = new Date();
+  }
+
+  // 가리기 규칙에서 빠진 학생 이름·임시 문구가 있으면 한 번 더 가린다 (명단을 읽은 뒤에만 가능)
+  function scrubNames(json, names) {
+    const list = [...new Set((names || []).filter((n) => n && n.length >= 2))].sort((a, b) => b.length - a.length);
+    let hits = 0;
+    for (const word of [...list, '[임시 ']) {
+      const parts = json.split(word);
+      hits += parts.length - 1;
+      json = parts.join('▒▒▒');
+    }
+    return { json, hits };
+  }
+
+  const fileStamp = (d) => {
     const pad = (n) => String(n).padStart(2, '0');
-    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const doc = {
-      종류: '나이스입력도우미 개발용 진단',
-      안내: '학생 이름·입력값·상단 사용자 정보·알림 내용은 ▒▒▒ 로 가렸습니다. 전달하기 전에 파일을 열어 확인해 주세요.',
-      확장버전: chrome.runtime.getManifest().version,
-      시각: now.toISOString(),
-      탭주소: urlPath(tab.url),
-      정식나이스: isRealNeis(tab.url),
-      화면크기: [tab.width, tab.height],
-      실패정보: info,
-      프레임: frames,
-    };
-    const name = `neis-진단-${stamp}.json`;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  };
+
+  // JSON 을 다운로드 폴더에 내려받는다 (새 권한 없이 사이드패널에서 직접 저장).
+  // 파일 이름은 Windows 에서도 쓸 수 있는 글자(한글·숫자·-)만 쓴다.
+  // 저장하기 전에 명단과 대조해 남은 이름을 가리고, 가린 곳 수를 파일 안에 적는다.
+  function downloadJson(prefix, doc, names) {
+    const now = new Date();
+    const checked = names?.length
+      ? { 대조한학생수: names.length }
+      : { 안내: '학생 명단을 읽기 전에 멈춰 이름 대조를 하지 못했습니다. 보내기 전에 파일을 열어 학생 이름이 없는지 확인해 주세요.' };
+    const draft = JSON.stringify({ ...doc, 가리기점검: { ...checked, 추가로가린곳: '__HITS__' } }, null, 2);
+    const { json, hits } = scrubNames(draft, names);
+    const name = `${prefix}-${fileStamp(now)}.json`;
+    const url = URL.createObjectURL(new Blob([json.replace('"__HITS__"', String(hits))], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
     document.body.append(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    return name;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return { name, hits };
+  }
+
+  const baseDoc = (tab) => ({
+    안내: '학생 이름·입력값·상단 사용자 정보·알림 내용은 ▒▒▒ 로 가렸습니다. 전달하기 전에 파일을 열어 확인해 주세요.',
+    확장버전: chrome.runtime.getManifest().version,
+    시각: new Date().toISOString(),
+    탭주소: urlPath(tab.url),
+    정식나이스: isRealNeis(tab.url),
+    화면크기: [tab.width, tab.height],
+    환경: { 브라우저: navigator.userAgent, 언어: navigator.language, 화면배율: window.devicePixelRatio },
+  });
+
+  async function saveDiagnostics(tab, info, names) {
+    const doc = { 종류: '나이스입력도우미 개발용 진단', ...baseDoc(tab), 실패정보: info, 프레임: await collectFrames(tab.id) };
+    return downloadJson('neis-진단', doc, names);
   }
 
   // 탭 로딩이 끝날 때까지 대기
@@ -423,12 +487,35 @@
     return rs.find((x) => x.ok) || rs.sort((a, b) => (b.stepNo || 0) - (a.stepNo || 0))[0];
   };
 
-  btn.addEventListener('click', async () => {
+  // 단계별 수집 중인 실행 (없으면 null). 페이지의 snap() 요청을 받아 그 순간의 화면 구조를 쌓는다.
+  let capture = null;
+  const addSnap = async (name, extra = {}) => {
+    const c = capture;
+    if (!c) return;
+    const order = c.steps.length + 1;
+    c.steps.push({ 순서: order, 이름: name, 경과ms: Date.now() - c.t0, ...extra, 프레임: await collectFrames(c.tabId) });
+    if (status) status.textContent = `${status.textContent.split('\n[화면 수집')[0]}\n[화면 수집 ${order}개] ${name}`;
+  };
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg?.type !== 'ns-dev-snap' || !capture || sender.tab?.id !== capture.tabId) return false;
+    addSnap(msg.name, { 단계번호: msg.stepNo, 페이지경과ms: msg.ms }).then(() => sendResponse(true), () => sendResponse(false));
+    return true;
+  });
+
+  const buttons = [btn, capBtn, diagBtn].filter(Boolean);
+  const setBusy = (busy) => buttons.forEach((b) => { b.disabled = busy; });
+
+  // 행특 조회 → 임시 데이터 입력.
+  // withCapture 이면 단계마다 화면 구조를 모아 끝에 파일 하나로 저장한다 (성공·실패 모두).
+  // VPN 을 켜면 인터넷이 끊기는 학교 PC용: VPN 을 켠 채 한 번 돌리고, 끈 뒤 파일만 전달하면 된다.
+  async function runFlow(withCapture) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
-    btn.disabled = true;
+    setBusy(true);
     let failInfo = null;
+    let result = null;
+    let names = null;
     try {
       // 나이스 탭이면 새로고침하지 않는다 (정식 나이스는 새로고침하면 열린 화면·입력이 사라지고 초기화면으로 감).
       // 화면이 어떤 상태든 메뉴를 처음부터 눌러 들어가므로 새로고침 없이도 같은 결과가 된다.
@@ -441,14 +528,19 @@
         await loaded;
       }
 
-      // 나이스 화면이 iframe 안에 있을 수도 있어 모든 프레임에서 실행한다
       setStatus('진행 중... 2차인증 창이 뜨면 번호를 입력하세요.');
+      if (withCapture) {
+        capture = { tabId: tab.id, t0: Date.now(), steps: [] };
+        await addSnap('시작');
+      }
+      // 나이스 화면이 iframe 안에 있을 수도 있어 모든 프레임에서 실행한다
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
         func: runNeisQuery,
-        args: [QUERY, SCREEN_NAME, TIMEOUTS],
+        args: [QUERY, SCREEN_NAME, TIMEOUTS, withCapture],
       });
       const r = pickFrameResult(results);
+      result = { 단계: r?.step, 단계번호: r?.stepNo, 성공: !!r?.ok, 단계시간: r?.timeline || [] };
       if (!r?.ok) {
         setStatus(`실패 (${r?.step || '?'}): ${r?.error || '알 수 없는 오류'}${r?.dialogText ? `\n창 내용: ${r.dialogText}` : ''}`);
         failInfo = {
@@ -457,6 +549,7 @@
         };
         return;
       }
+      names = r.names;
 
       // 미리보기에 임시 데이터 (학생 수만큼). 사이트에서 받은 데이터와 같은 키에 저장하므로
       // sidepanel.js 의 storage.onChanged 가 미리보기·제목·메뉴 위치를 갱신한다.
@@ -473,6 +566,7 @@
         : '모의 나이스 임시 문구입니다. (저장해도 연습 데이터만 바뀝니다)';
       const sum = await injectData(getSourceGuide('behavior').tabCount, { forceTab: false, saveNote });
       const expected = rows.length - (r.readonlyRows || 0);
+      Object.assign(result, { 학년: r.grade, 반: r.cls, 학생수: rows.length, 입력칸없는행: r.readonlyRows, 입력결과: sum || null });
       setStatus(`완료: ${r.grade}학년 ${r.cls}반 조회 → 임시 데이터 ${sum?.count ?? 0}/${rows.length}건 입력 (결과는 팝업 확인)`
         + (real ? '\n정식 나이스입니다. 임시 문구이니 저장하지 말고 다시 조회하세요.' : ''));
       // 입력이 모자라거나 표 구조 방식이 아니었으면 진단 저장
@@ -483,30 +577,43 @@
       setStatus(`실패: ${e.message}`);
       failInfo = { 단계: '확장 프로그램', 오류: e.message };
     } finally {
-      if (failInfo) {
-        try {
-          const name = await saveDiagnostics(tab, failInfo);
+      try {
+        if (withCapture) {
+          // 끝난 시점(입력 후 또는 멈춘 곳) 화면까지 남기고 파일 하나로 저장
+          await addSnap(failInfo ? '멈춘 곳' : '입력 후');
+          const doc = { 종류: '나이스입력도우미 개발용 단계별 화면 수집', ...baseDoc(tab), 결과: { ...result, 실패정보: failInfo }, 단계: capture?.steps || [] };
+          capture = null;
+          const { name, hits } = downloadJson('neis-단계수집', doc, names);
+          setStatus(`${status?.textContent.split('\n[화면 수집')[0] || ''}\n단계별 수집 파일 저장 (다운로드 폴더): ${name}`
+            + (hits ? `\n⚠️ 가리기에서 빠진 이름 ${hits}곳을 추가로 가렸습니다. 개발자에게 알려 주세요.` : ''));
+        } else if (failInfo) {
+          const { name } = await saveDiagnostics(tab, failInfo, names);
           setStatus(`${status?.textContent || ''}\n진단 파일 저장: ${name}`);
-        } catch (e) {
-          setStatus(`${status?.textContent || ''}\n진단 파일 저장 실패: ${e.message}`);
         }
+      } catch (e) {
+        setStatus(`${status?.textContent || ''}\n파일 저장 실패: ${e.message}`);
+      } finally {
+        capture = null;
+        setBusy(false);
       }
-      btn.disabled = false;
     }
-  });
+  }
+
+  btn.addEventListener('click', () => runFlow(false));
+  capBtn?.addEventListener('click', () => runFlow(true));
 
   // 실패하지 않았어도 지금 화면 구조를 직접 저장
   diagBtn?.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
-    diagBtn.disabled = true;
+    setBusy(true);
     try {
-      const name = await saveDiagnostics(tab, { 단계: '수동 저장' });
+      const { name } = await saveDiagnostics(tab, { 단계: '수동 저장' });
       setStatus(`진단 파일 저장: ${name}`);
     } catch (e) {
       setStatus(`진단 파일 저장 실패: ${e.message}`);
     } finally {
-      diagBtn.disabled = false;
+      setBusy(false);
     }
   });
 })();
