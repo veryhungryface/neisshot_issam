@@ -23,11 +23,21 @@
   const SCREEN_NAME = '행동특성및종합의견';
   // 기다리는 시간(ms). 학교 망에서 정식 나이스가 느릴 수 있어 넉넉하게 잡는다.
   const TIMEOUTS = { step: 10000, roleMenu: 4000, screen: 25000, result: 30000, otp: 180000 };
+  // 과세특 열기에서 쓰는 기다리는 시간
+  //   2차인증: 창이 사라질 때까지 기다린다 (사실상 무제한, 1시간)
+  //   공지 창: 창이 없는 상태가 2.5초 이어지면 끝, 전체 최대 20초
+  //   왼쪽 메뉴 다시 누르기: 눌렀는데 4초 동안 화면 탭·2차인증이 안 뜨면
+  const SETEUK_TIMEOUTS = { ...TIMEOUTS, otp: 3600000, notice: 20000, noticeQuiet: 2500, leafRetry: 4000 };
+  // 과세특 열기에서 쓰는 나이스 주소 (인천). 로그인을 마치고 메인 화면이 뜰 때까지 최대 10분 기다린다.
+  const NEIS_HOME = 'https://ice.neis.go.kr/';
+  const NEIS_HOST = 'ice.neis.go.kr';
+  const LOGIN_TIMEOUT = 600000;
 
   const devTools = document.getElementById('devTools');
   const btn = document.getElementById('btnDevQuickQuery');
   const diagBtn = document.getElementById('btnDevSaveDiag');
   const capBtn = document.getElementById('btnDevStepCapture');
+  const seteukBtn = document.getElementById('btnDevOpenSeteuk');
   const status = document.getElementById('devQuickQueryStatus');
   if (!IS_DEV_INSTALL || !devTools || !btn) return;
   devTools.hidden = false;
@@ -120,7 +130,7 @@
         ...roles.filter((li) => /^\d+-\d+담임$/.test(roleLabel(li)) && !named(li, exact)),
         ...roles.filter((li) => named(li, '학급담임')),
       ];
-      const megaFolder = () => [...document.querySelectorAll('.cl-navigationbar-menu a[role=link]')]
+      const megaFolder = () => [...document.querySelectorAll('.cl-navigationbar-menu a[role=link], .cl-navigationbar-accessiblemegamenu a[role=link]')]
         .find((a) => visible(a) && named(a, screenName));
       let folder = null;
       for (const li of candidates) {
@@ -244,6 +254,176 @@
     }
   }
 
+  // 과세특 화면 열기 (페이지 안에서 실행, 모든 프레임에 주입되므로 바깥 변수를 쓰지 않는다)
+  //   교과담임(상단 역할) → 메가메뉴 '성적' 폴더의 '성적처리' → 왼쪽 메뉴 '과목별세부능력및특기사항'
+  //   → 2차인증 창이 뜨면 사람이 번호를 넣어 창이 사라질 때까지 기다림 → 화면 준비 완료
+  //   정식 나이스 수동 수집(2026-11-11)에서 확인한 구조:
+  //   · 메가메뉴는 역할을 펼쳤을 때만 그려진다: li.cl-navigationbar-item > .cl-navigationbar-accessiblemegamenu
+  //     안에 a.cl-folder(1단계, 예: 성적) / a.cl-leaf(2단계, 예: 성적처리), 둘 다 role=link
+  //   · 왼쪽 메뉴: a.cl-sidenavigation-item (cl-folder 는 aria-expanded, cl-leaf 는 화면)
+  //   · 화면 탭: [role=tab][aria-label="선택됨, 과목별세부능력및특기사항"]
+  //   · 2차인증: [role=dialog][aria-label="2차인증"] (창 안에도 M-OTP 등 tab/tabpanel 이 있음)
+  async function openSeteukScreen(T) {
+    const ROLE = '교과담임';
+    const MEGA_FOLDER = '성적';
+    const MEGA_LEAF = '성적처리';
+    const SCREEN = '과목별세부능력및특기사항';
+    let step = '시작';
+    let stepNo = 0;
+    const t0 = Date.now();
+    const timeline = [];
+    let dialogText = '';
+    const at = (no, name) => { stepNo = no; step = name; timeline.push({ 단계번호: no, 단계: name, ms: Date.now() - t0 }); };
+
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const waitFor = async (fn, what, timeout = T.step, interval = 100) => {
+      const end = Date.now() + timeout;
+      for (;;) {
+        const v = fn();
+        if (v) return v;
+        if (Date.now() > end) throw new Error(`시간 초과: ${what}`);
+        await wait(interval);
+      }
+    };
+    const visible = (e) => e && e.getClientRects().length > 0;
+    const text = (e) => (e?.textContent || '').replace(/\s+/g, ' ').trim();
+    const named = (e, name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(text(e));
+    const isAuthDialog = (d) => /인증/.test(d.getAttribute('aria-label') || '');
+    const dialogs = () => [...document.querySelectorAll('[role=dialog]')].filter(visible);
+    const otpDialog = () => dialogs().find(isAuthDialog);
+    const msgDialog = () => dialogs().find((d) => !isAuthDialog(d));
+    const dialogError = (d, msg) => {
+      dialogText = text(d).slice(0, 80);
+      return new Error(`${msg} (창 이름: ${d.getAttribute('aria-label') || '없음'})`);
+    };
+    const loadmaskVisible = () => [...document.querySelectorAll('.cl-loadmask')].some(visible);
+    // 2차인증 창 안에도 tabpanel 이 있으므로 창 밖의 화면만 본다
+    const activePanel = () => [...document.querySelectorAll('[role=tabpanel]')]
+      .find((p) => visible(p) && !p.closest('[role=dialog]'));
+    const sideItem = (name, kind) => [...document.querySelectorAll(`a.cl-sidenavigation-item.cl-${kind}`)]
+      .find((a) => visible(a) && named(a, name));
+    const selectedTab = () => document.querySelector(`[role=tab][aria-label="선택됨, ${SCREEN}"]`);
+    // 메뉴 클릭: 나이스 메뉴는 마우스 올림으로 열리는 곳도 있어 mouseover 도 같이 보낸다
+    const press = (el) => {
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      el.click();
+    };
+
+    // 2차인증 창이 있으면 사라질 때까지 기다린다 (번호는 사람이 입력)
+    const waitOtp = async () => {
+      const otp = otpDialog();
+      if (!otp) return false;
+      await waitFor(() => !otp.isConnected || !visible(otp), '2차인증 입력', T.otp, 300);
+      return true;
+    };
+
+    try {
+      at(1, '상단 역할 메뉴');
+      const roles = await waitFor(() => {
+        const r = [...document.querySelectorAll('li.cl-navigationbar-item')];
+        return r.length ? r : null;
+      }, '상단 역할 메뉴');
+      // 접속 직후 뜨는 공지 등 창을 닫는다. 늦게 뜨는 창도 있어, 창이 없는 상태가
+      // T.noticeQuiet 동안 이어지면 끝낸다 (전체 최대 T.notice). 2차인증 창은 건드리지 않는다.
+      at(1, '공지 창 닫기');
+      const closeBtnOf = (d) => d.querySelector('.cl-dialog-close[role=button]')
+        || [...d.querySelectorAll('[role=button], button')].find((b) => visible(b) && (text(b) === '닫기' || b.getAttribute('aria-label') === '닫기'));
+      let closed = 0;
+      const noticeEnd = Date.now() + T.notice;
+      let quietSince = Date.now();
+      while (Date.now() < noticeEnd && Date.now() - quietSince < T.noticeQuiet) {
+        const d = msgDialog();
+        if (!d) { await wait(200); continue; }
+        const close = closeBtnOf(d);
+        if (!close) throw dialogError(d, '닫기 버튼이 없는 창이 떠 있습니다. 직접 처리해 주세요');
+        for (const type of ['mousedown', 'mouseup']) close.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+        close.click();
+        closed++;
+        await waitFor(() => !d.isConnected || !visible(d), '공지 창 닫힘', 3000)
+          .catch(() => { throw dialogError(d, '창이 닫히지 않습니다. 직접 닫아 주세요'); });
+        quietSince = Date.now();
+      }
+      const blocking = msgDialog();
+      if (blocking) throw dialogError(blocking, '창이 계속 뜹니다. 직접 닫아 주세요');
+      await waitOtp();
+
+      // 왼쪽 메뉴에 이미 과세특이 보이면 (성적처리 메뉴가 열려 있으면) 역할·메가메뉴는 건너뛴다
+      let leaf = sideItem(SCREEN, 'leaf');
+      if (!leaf) {
+        at(2, `역할 '${ROLE}'`);
+        const role = roles.find((li) => named(li, ROLE));
+        if (!role) throw new Error(`상단에 '${ROLE}' 역할이 없습니다 (있는 역할: ${roles.map((li) => text(li).split(' ')[0]).join(', ')})`);
+        const roleLink = role.querySelector('a') || role;
+
+        at(3, `메가메뉴 '${MEGA_FOLDER}' → '${MEGA_LEAF}'`);
+        const megaLeaf = () => {
+          const mega = role.querySelector('.cl-navigationbar-accessiblemegamenu');
+          if (!mega || !visible(mega)) return null;
+          const folder = [...mega.querySelectorAll('a.cl-folder[role=link]')].find((a) => named(a, MEGA_FOLDER));
+          const cat = folder?.closest('.cl-navigationbar-category') || mega;
+          return [...cat.querySelectorAll('a.cl-leaf[role=link]')].find((a) => visible(a) && named(a, MEGA_LEAF)) || null;
+        };
+        // 역할을 눌러 메가메뉴를 연다. 이미 열려 있으면 누르지 않는다(다시 누르면 닫힘).
+        // 한 번 눌러도 안 보이면(펼침 표시만 남아 있던 경우 등) 한 번 더 누른다.
+        let link = megaLeaf();
+        if (!link) {
+          press(roleLink);
+          link = await waitFor(megaLeaf, `메가메뉴 '${MEGA_LEAF}'`, T.roleMenu).catch(() => null);
+        }
+        if (!link) {
+          press(roleLink);
+          link = await waitFor(megaLeaf, `메가메뉴 '${MEGA_LEAF}' (역할 '${ROLE}'을 펼쳐도 안 보임)`, T.roleMenu);
+        }
+        press(link);
+
+        at(4, `왼쪽 메뉴 '${SCREEN}'`);
+        leaf = await waitFor(() => {
+          const l = sideItem(SCREEN, 'leaf');
+          if (l) return l;
+          // 성적처리 갈래가 접혀 있으면 펼친다
+          const f = sideItem(MEGA_LEAF, 'folder');
+          if (f && f.getAttribute('aria-expanded') === 'false') f.click();
+          return null;
+        }, `왼쪽 메뉴 '${SCREEN}'`);
+      }
+      press(leaf);
+
+      // 화면 탭 선택 + 조회조건이 그려지고 가림막·2차인증이 없을 때까지.
+      // 2차인증은 화면 탭이 먼저 선택된 뒤에 뜰 수도 있어 화면이 준비될 때까지 계속 살핀다.
+      at(5, '화면 열기 / 2차인증');
+      const readyPanel = () => {
+        const p = activePanel();
+        const hasCond = p && [...p.querySelectorAll('[role=combobox]')].some((b) => /^과목, /.test(b.getAttribute('aria-label') || ''));
+        return selectedTab() && hasCond && !loadmaskVisible() && !otpDialog() ? p : null;
+      };
+      let panel = null;
+      let otpWaited = false;
+      let end = Date.now() + T.screen;
+      // 왼쪽 메뉴가 메가메뉴 클릭 직후 다시 그려지면 처음 누른 칸이 먹지 않는다 (실제로 화면이 안 열린 적 있음).
+      // 화면 탭도 2차인증도 안 뜬 채 T.leafRetry 가 지나면 칸을 새로 찾아 다시 누른다 (최대 2번 더).
+      let lastPress = Date.now();
+      let presses = 1;
+      while (!(panel = readyPanel())) {
+        if (await waitOtp()) { otpWaited = true; end = Date.now() + T.screen; continue; }
+        const d = msgDialog();
+        if (d) throw dialogError(d, '나이스 창이 떴습니다. 직접 처리해 주세요');
+        if (!selectedTab() && presses < 3 && Date.now() - lastPress > T.leafRetry) {
+          const again = sideItem(SCREEN, 'leaf');
+          if (again) { press(again); presses++; lastPress = Date.now(); }
+        }
+        if (Date.now() > end) throw new Error(`시간 초과: ${selectedTab() ? `${SCREEN} 화면` : '화면 또는 2차인증'}`);
+        await wait(100);
+      }
+
+      at(6, '완료');
+      const conds = [...panel.querySelectorAll('[role=combobox]')]
+        .map((b) => b.getAttribute('aria-label') || '').filter((v) => /^(학년도|학기|과정|계열\/학년\/학과|과목|강의실), /.test(v));
+      return { ok: true, stepNo, step, otpWaited, closed, conds, timeline };
+    } catch (e) {
+      return { ok: false, stepNo, step, error: e.message, dialogText, timeline };
+    }
+  }
+
   // 진단 정보 수집 (페이지의 모든 프레임에서 실행). 구조는 남기고 개인정보가 될 수 있는 글자는 가린다.
   //  · 글자를 남기는 곳: 역할·메가·왼쪽 메뉴, MDI 탭, 조회조건, 표 머리글, 펼친 목록, 화면 안 버튼, 화면 제목
   //  · 그 밖의 글자(상단 학교·사용자 정보, 알림 내용 등)와 학생 행의 글자·칸 이름 값, 입력값은 모두 ▒▒▒
@@ -251,7 +431,7 @@
     const MASK = '▒▒▒';
     const LIMIT = 300000;
     const SAFE = [
-      '.cl-navigationbar-item', '.cl-navigationbar-menu', '.cl-sidenavigation-item', '.rolemenu a',
+      '.cl-navigationbar-item', '.cl-navigationbar-menu', '.cl-navigationbar-accessiblemegamenu', '.cl-sidenavigation-item', '.rolemenu a',
       '[role=tablist]', '.search-box', '[role=columnheader]', '[role=listbox]',
       '[role=tabpanel] [role=button]', '[role=tabpanel] button', '[role=tabpanel] h1',
       '[role=dialog] [role=button]', '[role=dialog] button',
@@ -326,7 +506,7 @@
 
     // 선택자별로 몇 개가 잡히는지 (각 단계에서 찾는 선택자)
     const COUNT_SELECTORS = [
-      'li.cl-navigationbar-item', '.cl-navigationbar-menu', '.cl-navigationbar-menu a[role=link]',
+      'li.cl-navigationbar-item', '.cl-navigationbar-menu', '.cl-navigationbar-menu a[role=link]', '.cl-navigationbar-accessiblemegamenu',
       '.rolemenu a.cl-leaf', 'a.cl-sidenavigation-item.cl-leaf', '[role=tab]', '[role=tabpanel]',
       '[role=combobox]', '[role=listbox]', '[role=grid]', '[role=row][aria-rowindex]', '[role=gridcell]',
       '[role=columnheader]', 'textarea', '[role=dialog]', '.cl-loadmask', '.search-box', '.search-btn', 'iframe',
@@ -368,7 +548,7 @@
       },
       선택자개수: counts,
       역할메뉴: roleItems.map((li) => ({ 이름: text(li).split(' ')[0], 펼침: li.querySelector('a')?.getAttribute('aria-expanded') ?? null })),
-      메가메뉴_보이는항목: [...document.querySelectorAll('.cl-navigationbar-menu a[role=link]')].filter(visible).map(text).slice(0, 80),
+      메가메뉴_보이는항목: [...document.querySelectorAll('.cl-navigationbar-menu a[role=link], .cl-navigationbar-accessiblemegamenu a[role=link]')].filter(visible).map(text).slice(0, 80),
       왼쪽메뉴_보이는화면: [...document.querySelectorAll('.rolemenu a.cl-leaf, a.cl-sidenavigation-item')].filter(visible).map(text).slice(0, 80),
       탭: [...document.querySelectorAll('[role=tab]')].map((t) => t.getAttribute('aria-label') || text(t)).slice(0, 60),
       현재화면: activePanel ? {
@@ -502,7 +682,7 @@
     return true;
   });
 
-  const buttons = [btn, capBtn, diagBtn].filter(Boolean);
+  const buttons = [btn, capBtn, diagBtn, seteukBtn].filter(Boolean);
   const setBusy = (busy) => buttons.forEach((b) => { b.disabled = busy; });
 
   // 행특 조회 → 임시 데이터 입력.
@@ -616,4 +796,161 @@
       setBusy(false);
     }
   });
+
+  // 과세특 화면 열기 (교과담임). 2차인증 창이 뜨면 사람이 번호를 넣어 창이 사라질 때까지 기다린다.
+  // 다음 작업(조회·입력 등)은 이 함수가 성공한 뒤에 이어 붙인다.
+  const isNeisHome = (url) => { try { return new URL(url).hostname === NEIS_HOST; } catch { return false; } };
+
+  // 나이스 탭을 준비한다: 지금 탭 → 이 창의 다른 나이스 탭 → 다른 창의 나이스 탭 → 새 탭으로 접속.
+  // 그다음 로그인을 마치고 메인 화면(상단 역할 메뉴)이 뜰 때까지 기다린다.
+  async function ensureNeisTab() {
+    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+    let tab = active && isNeisHome(active.url) ? active : null;
+    if (!tab) {
+      const found = await chrome.tabs.query({ url: `${NEIS_HOME}*` });
+      tab = found.find((t) => t.windowId === active?.windowId) || found[0] || null;
+      if (tab) {
+        setStatus('열려 있는 나이스 탭으로 이동합니다...');
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+      } else {
+        setStatus(`나이스(${NEIS_HOST})에 접속하는 중...`);
+        tab = await chrome.tabs.create({ url: NEIS_HOME, active: true, windowId: active?.windowId });
+      }
+    }
+    // 로그인 화면이면 사람이 로그인할 때까지 기다린다 (로그인 중 페이지가 바뀌므로 1초마다 새로 확인)
+    const start = Date.now();
+    const end = start + LOGIN_TIMEOUT;
+    let asked = false;
+    for (;;) {
+      const ready = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => document.readyState === 'complete' && document.querySelectorAll('li.cl-navigationbar-item').length > 0,
+      }).then((rs) => rs.some((x) => x.result), () => false);
+      if (ready) return chrome.tabs.get(tab.id);
+      if (Date.now() > end) throw new Error('나이스 메인 화면이 뜨지 않았습니다 (로그인 대기 시간 초과)');
+      // 5초 안에 메인 화면이 안 뜨면 로그인 화면으로 보고 안내한다
+      if (!asked && Date.now() - start > 5000) {
+        asked = true;
+        setStatus('나이스에 로그인해 주세요. 메인 화면이 뜨면 이어서 진행합니다.');
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  async function runOpenSeteuk() {
+    setBusy(true);
+    let failInfo = null;
+    let tab = null;
+    try {
+      tab = await ensureNeisTab();
+      setStatus('과세특 화면 여는 중... (공지 창은 자동으로 닫고, 2차인증 창이 뜨면 번호를 입력하세요)');
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: openSeteukScreen,
+        args: [SETEUK_TIMEOUTS],
+      });
+      const r = pickFrameResult(results);
+      if (!r?.ok) {
+        setStatus(`실패 (${r?.step || '?'}): ${r?.error || '알 수 없는 오류'}${r?.dialogText ? `\n창 내용: ${r.dialogText}` : ''}`);
+        failInfo = {
+          작업: '과세특 열기', 단계: r?.step, 단계번호: r?.stepNo, 오류: r?.error, 단계시간: r?.timeline || [],
+          프레임별: results.map((x) => ({ frameId: x.frameId, 단계: x.result?.step, 오류: x.result?.error, 성공: !!x.result?.ok })),
+        };
+        return;
+      }
+      const secs = Math.round((r.timeline.at(-1)?.ms || 0) / 1000);
+      setStatus(`과세특 화면 열림 (${secs}초${r.closed ? `, 공지 창 ${r.closed}개 닫음` : ''}${r.otpWaited ? ', 2차인증 후' : ''})\n조회조건: ${r.conds.join(' / ')}`);
+    } catch (e) {
+      setStatus(`실패: ${e.message}`);
+      failInfo = { 작업: '과세특 열기', 단계: '확장 프로그램', 오류: e.message };
+    } finally {
+      try {
+        if (failInfo && tab) {
+          const { name } = await saveDiagnostics(tab, failInfo);
+          setStatus(`${status?.textContent || ''}\n진단 파일 저장: ${name}`);
+        }
+      } catch (e) {
+        setStatus(`${status?.textContent || ''}\n진단 파일 저장 실패: ${e.message}`);
+      } finally {
+        setBusy(false);
+      }
+    }
+  }
+  seteukBtn?.addEventListener('click', runOpenSeteuk);
+
+  // ── 수동 화면 수집 ──
+  // 사람이 직접 메뉴를 누르며 원하는 순간마다 '담기' → 마지막에 파일 하나로 저장.
+  // 새 화면(과세특 등)으로 들어가는 길을 스크립트로 만들기 전에 메뉴·화면 구조를 파악하는 용도.
+  // VPN 을 켜 둔 채로도 저장(다운로드 폴더)까지 되므로, VPN 을 끈 뒤 파일만 전달하면 된다.
+  // 모은 화면은 사이드패널 메모리에만 있으므로 사이드패널을 닫으면 사라진다.
+  const snapNowBtn = document.getElementById('btnDevSnapNow');
+  const snapDelayBtn = document.getElementById('btnDevSnapDelay');
+  const snapSaveBtn = document.getElementById('btnDevSnapSave');
+  const snapClearBtn = document.getElementById('btnDevSnapClear');
+  const snapMemo = document.getElementById('devSnapMemo');
+  const snapStatus = document.getElementById('devSnapStatus');
+  if (!snapNowBtn) return;
+
+  let manual = { t0: 0, tab: null, steps: [] };
+  let snapping = false;
+  const setSnapStatus = (t) => { if (snapStatus) snapStatus.textContent = t; };
+  const refreshSnapButtons = () => {
+    const n = manual.steps.length;
+    snapNowBtn.disabled = snapping;
+    snapDelayBtn.disabled = snapping;
+    snapSaveBtn.disabled = snapping || !n;
+    snapClearBtn.disabled = snapping || !n;
+    snapSaveBtn.textContent = `파일로 저장 (${n}개)`;
+  };
+
+  async function manualSnap(delayMs) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+    snapping = true;
+    refreshSnapButtons();
+    const memo = snapMemo?.value.trim() || '';
+    try {
+      for (let s = Math.ceil(delayMs / 1000); s > 0; s--) {
+        setSnapStatus(`${s}초 뒤 담습니다... 나이스 화면에서 원하는 상태(메뉴 펼침 등)로 두세요.`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      setSnapStatus('담는 중...');
+      if (!manual.steps.length) manual = { t0: Date.now(), tab, steps: [] };
+      const order = manual.steps.length + 1;
+      manual.steps.push({
+        순서: order, 메모: memo, 경과ms: Date.now() - manual.t0,
+        탭주소: urlPath(tab.url), 탭제목: tab.title || '', 프레임: await collectFrames(tab.id),
+      });
+      if (snapMemo) snapMemo.value = '';
+      setSnapStatus(`${order}번째 화면 담음${memo ? ` (${memo})` : ''}. 다음 단계로 이동한 뒤 다시 담으세요.\n※ 사이드패널을 닫으면 모은 화면이 사라집니다.`);
+    } catch (e) {
+      setSnapStatus(`담기 실패: ${e.message}`);
+    } finally {
+      snapping = false;
+      refreshSnapButtons();
+    }
+  }
+
+  snapNowBtn.addEventListener('click', () => manualSnap(0));
+  snapDelayBtn.addEventListener('click', () => manualSnap(3000));
+  snapMemo?.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !snapping) manualSnap(0); });
+  snapSaveBtn.addEventListener('click', () => {
+    if (!manual.steps.length) return;
+    try {
+      const doc = { 종류: '나이스입력도우미 개발용 수동 화면 수집', ...baseDoc(manual.tab), 단계: manual.steps };
+      const { name } = downloadJson('neis-수동수집', doc, null);
+      setSnapStatus(`저장 완료 (다운로드 폴더): ${name}\n보내기 전에 파일을 열어 학생 이름이 없는지 확인해 주세요.`);
+      manual = { t0: 0, tab: null, steps: [] };
+    } catch (e) {
+      setSnapStatus(`저장 실패: ${e.message}`);
+    }
+    refreshSnapButtons();
+  });
+  snapClearBtn.addEventListener('click', () => {
+    manual = { t0: 0, tab: null, steps: [] };
+    setSnapStatus('모은 화면을 비웠습니다.');
+    refreshSnapButtons();
+  });
+  refreshSnapButtons();
 })();

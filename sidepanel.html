@@ -390,6 +390,31 @@
       font-weight: 600;
     }
 
+    .dev-manual {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed #d1d5db;
+    }
+
+    .dev-manual-memo {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+
+    .dev-manual-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .dev-manual-row .btn-dev {
+      flex: 1;
+    }
+
     .dev-tools-status {
       margin-top: 6px;
       white-space: pre-line;
@@ -858,7 +883,21 @@
       <button type="button" class="btn-dev" id="btnDevQuickQuery">행특 조회 → 임시 데이터 입력 (학년·반 비어 있으면 3-1)</button>
       <button type="button" class="btn-dev btn-dev-sub" id="btnDevStepCapture" title="VPN을 켠 채 한 번 누르고, VPN을 끈 뒤 다운로드 폴더의 neis-단계수집-*.json 하나만 전달">위 동작 + 단계별 화면 구조 수집 (파일 1개 저장)</button>
       <button type="button" class="btn-dev btn-dev-sub" id="btnDevSaveDiag">지금 화면 진단 저장 (개인정보 가림)</button>
+      <button type="button" class="btn-dev" id="btnDevOpenSeteuk" style="margin-top: 6px;" title="ice.neis.go.kr 접속(안 되어 있으면 새 탭, 로그인 대기) → 공지 창 닫기 → 교과담임 → 성적 → 성적처리 → 과목별세부능력및특기사항. 2차인증 창이 뜨면 번호를 넣을 때까지 기다립니다.">과세특 화면 열기 (교과담임)</button>
       <div class="dev-tools-status" id="devQuickQueryStatus"></div>
+      <div class="dev-manual" id="devManual">
+        <div class="dev-tools-label">수동 화면 수집 (직접 메뉴를 누르며 단계마다 담기 → 파일 1개)</div>
+        <input type="text" class="dev-manual-memo" id="devSnapMemo" placeholder="메모 (선택) 예: 교과담임 메가메뉴 펼침">
+        <div class="dev-manual-row">
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSnapNow">지금 화면 담기</button>
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSnapDelay" title="누른 뒤 3초 안에 나이스 메뉴에 마우스를 올려 두면 펼친 상태가 담깁니다">3초 뒤 담기</button>
+        </div>
+        <div class="dev-manual-row">
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSnapSave" disabled>파일로 저장 (0개)</button>
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSnapClear" disabled>비우기</button>
+        </div>
+        <div class="dev-tools-status" id="devSnapStatus"></div>
+      </div>
     </div>
   </div>
 
