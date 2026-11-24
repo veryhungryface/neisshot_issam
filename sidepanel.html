@@ -42,7 +42,9 @@
       height: calc(100vh - 20px);
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      /* 내용이 창보다 길면(개발용 칸, 조회 안내 등) 카드 안에서 스크롤 */
+      overflow-y: auto;
+      overflow-x: hidden;
     }
 
     /* ===== 헤더 ===== */
@@ -151,7 +153,8 @@
 
     .preview-section {
       flex: 1 1 auto;
-      min-height: 0;
+      /* 카드가 스크롤될 때도 미리보기 표가 납작해지지 않게 */
+      min-height: 180px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -191,6 +194,15 @@
       text-align: center;
       color: #b4b8bf;
       font-size: 12px;
+    }
+
+    /* 학생별 반·번호가 있는 데이터: 번호 칸에 '5반 10번' 을 한 줄로 */
+    .preview table.has-ban td:first-child {
+      width: 72px;
+      padding-left: 8px;
+      padding-right: 8px;
+      white-space: nowrap;
+      word-break: keep-all;
     }
 
     .preview-empty {
@@ -287,6 +299,20 @@
       word-break: keep-all;
     }
 
+    .query-guide { margin-top: 8px; padding: 10px 12px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fafbfc; }
+    .query-guide[hidden] { display: none; }
+    .query-text { font-size: 12px; color: #333; line-height: 1.5; word-break: keep-all; }
+    .btn-query { margin-top: 8px; width: 100%; padding: 8px; border: 1px solid #3772FF; border-radius: 6px; background: #fff; color: #3772FF; font-weight: 600; cursor: pointer; }
+    .btn-query:disabled { opacity: .5; cursor: default; }
+    .group-row td { background: #fff5ec; color: #b4530f; font-weight: 600; font-size: 12px; padding: 6px 10px; }
+    /* 확인/취소 줄: 위 여백은 줄에 두고, 두 버튼은 같은 높이·모양 */
+    .ns-modal-btns { display: flex; gap: 8px; margin-top: 18px; }
+    .ns-modal-btns .ns-modal-ok { flex: 1; margin-top: 0; }
+    .ns-modal-cancel { flex: 1; margin: 0; padding: 13px; border: 1px solid #d1d5db; border-radius: 12px; background: #fff; color: #374151; font-size: 14px; font-weight: 700; font-family: inherit; line-height: normal; cursor: pointer; }
+    .ns-modal-cancel:hover { background: #f3f4f6; }
+    .ns-modal-cancel[hidden] { display: none; }
+    .query-status { margin-top: 6px; font-size: 12px; color: #555; white-space: pre-wrap; }
+    .query-status:empty { display: none; }
     .menu-path {
       font-size: 13px;
       font-weight: 800;
@@ -413,6 +439,21 @@
 
     .dev-manual-row .btn-dev {
       flex: 1;
+    }
+
+    .btn-dev[hidden], .dev-manual-row[hidden] { display: none; }
+
+    .dev-sample-json {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 6px 0;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      resize: vertical;
     }
 
     .dev-tools-status {
@@ -868,22 +909,27 @@
         </div>
         <div class="menu-path" id="menuPathText">사이트에서 데이터를 보내면 메뉴 위치가 자동 표시됩니다.</div>
       </div>
+      <!-- 사이트가 조회조건(학년·반·과목·강의실 등)을 함께 보낸 경우에만 보임 -->
+      <div class="query-guide" id="queryGuide" hidden>
+        <div class="query-text" id="queryText"></div>
+        <button type="button" class="btn-query" id="btnApplyQuery">이 조건으로 나이스 조회</button>
+        <div class="query-status" id="queryStatus"></div>
+      </div>
     </div>
 
     <!-- 하단 액션 -->
-    <div class="exec-caution">⚠️ 실행 전 NEIS에서 입력할 첫 칸을 클릭해 커서가 깜박이는지 꼭 확인하세요.</div>
+    <div class="exec-caution" id="execCaution">⚠️ 실행 전 NEIS에서 입력할 첫 칸을 클릭해 커서가 깜박이는지 꼭 확인하세요.</div>
     <div class="actions">
       <button type="button" class="btn-reset" id="btnReset">초기화</button>
       <button type="button" class="btn-exec" id="btnExecute" disabled>일괄 입력 실행</button>
     </div>
+    <div class="query-status auto-status" id="autoStatus"></div>
 
     <!-- [개발용] 개발 설치에서만 보임 (dev-tools.js) -->
     <div class="dev-tools" id="devTools" hidden>
       <div class="dev-tools-label">개발용</div>
-      <button type="button" class="btn-dev" id="btnDevQuickQuery">행특 조회 → 임시 데이터 입력 (학년·반 비어 있으면 3-1)</button>
-      <button type="button" class="btn-dev btn-dev-sub" id="btnDevStepCapture" title="VPN을 켠 채 한 번 누르고, VPN을 끈 뒤 다운로드 폴더의 neis-단계수집-*.json 하나만 전달">위 동작 + 단계별 화면 구조 수집 (파일 1개 저장)</button>
-      <button type="button" class="btn-dev btn-dev-sub" id="btnDevSaveDiag">지금 화면 진단 저장 (개인정보 가림)</button>
-      <button type="button" class="btn-dev" id="btnDevOpenSeteuk" style="margin-top: 6px;" title="ice.neis.go.kr 접속(안 되어 있으면 새 탭, 로그인 대기) → 공지 창 닫기 → 교과담임 → 성적 → 성적처리 → 과목별세부능력및특기사항. 2차인증 창이 뜨면 번호를 넣을 때까지 기다립니다.">과세특 화면 열기 (교과담임)</button>
+      <!-- 지금은 안 씀: 숨김 (개발 루프 run.mjs 는 검증 실패 때 그대로 눌러 쓴다) -->
+      <button type="button" class="btn-dev" id="btnDevSaveDiag" hidden>지금 화면 진단 저장 (개인정보 가림)</button>
       <div class="dev-tools-status" id="devQuickQueryStatus"></div>
       <div class="dev-manual" id="devManual">
         <div class="dev-tools-label">수동 화면 수집 (직접 메뉴를 누르며 단계마다 담기 → 파일 1개)</div>
@@ -897,6 +943,20 @@
           <button type="button" class="btn-dev btn-dev-sub" id="btnDevSnapClear" disabled>비우기</button>
         </div>
         <div class="dev-tools-status" id="devSnapStatus"></div>
+      </div>
+      <div class="dev-manual" id="devSample">
+        <div class="dev-tools-label">예시 데이터 (issamGPT 가 보내는 형식 그대로 → 받은 것처럼 넣기)</div>
+        <!-- 모의 나이스 명단에 맞춘 고정 예시: 화면에서는 숨기고 개발 루프(run.mjs)만 쓴다 -->
+        <div class="dev-manual-row" hidden>
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSampleSeteuk">과세특 예시</button>
+          <button type="button" class="btn-dev btn-dev-sub" id="btnDevSampleBehavior">행발 예시</button>
+        </div>
+        <!-- 지금은 안 씀: 숨김 (다시 쓰려면 hidden 을 지운다. 코드는 dev-tools.js 에 그대로 있음) -->
+        <button type="button" class="btn-dev btn-dev-sub" id="btnDevSampleGroups" hidden title="지금 과세특 화면의 학년·과목·강의실 목록에서 서로 다른 조합 3개를 골라 조합마다 조회하고, 명단 앞 10명으로 묶음을 만들어 받습니다. 정식 나이스에서는 시험 모드(저장 안 함, 넣고 확인 후 다시 조회해 버림), 모의 나이스에서는 저장까지 합니다.">과세특 묶음 예시 (화면에서 3묶음 × 10명)</button>
+        <button type="button" class="btn-dev btn-dev-sub" id="btnDevSampleFromGrid" title="지금 나이스에 열린 표의 반/번호(번호)와 조회조건으로 예시를 만듭니다. 학생 이름은 넣지 않습니다.">지금 나이스 표의 반/번호·조회조건으로 채우기</button>
+        <textarea class="dev-sample-json" id="devSampleJson" rows="12" spellcheck="false"></textarea>
+        <button type="button" class="btn-dev" id="btnDevSampleSend" title="위 JSON 을 issamGPT 에서 보낸 것과 같은 길(background.js)로 받아 저장합니다. 미리보기·조회 버튼이 바로 바뀝니다.">이 데이터로 받기</button>
+        <div class="dev-tools-status" id="devSampleStatus"></div>
       </div>
     </div>
   </div>
@@ -987,10 +1047,11 @@
     <div class="ns-modal" role="alertdialog" aria-modal="true" aria-describedby="nsModalMsg">
       <img class="ns-modal-icon" src="images/logo.gif" alt="아이쌤 지피티">
       <div class="ns-modal-msg" id="nsModalMsg"></div>
-      <button type="button" class="ns-modal-ok" id="nsModalOk">확인</button>
+      <div class="ns-modal-btns"><button type="button" class="ns-modal-cancel" id="nsModalCancel" hidden>취소</button><button type="button" class="ns-modal-ok" id="nsModalOk">확인</button></div>
     </div>
   </div>
 
+  <script src="neis-pages.js"></script>
   <script src="sidepanel.js"></script>
   <script src="dev-tools.js"></script>
 </body>

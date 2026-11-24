@@ -1,9 +1,11 @@
-// 개발용 버튼을 한 번 실행하고 목표 달성 여부를 판정한다 (루프의 한 바퀴)
-//   node tools/neis-dev-loop/run.mjs            코드 수정 반영(확장 새로 불러오기) 후 실행
+// 사이드패널 [자동 입력]을 예시 데이터로 한 번 돌리고 목표 달성 여부를 판정한다 (루프의 한 바퀴)
+//   node tools/neis-dev-loop/run.mjs            코드 수정 반영(확장 새로 불러오기) 후 행특 예시로 실행
+//   node tools/neis-dev-loop/run.mjs --seteuk   과세특 예시로 실행
 //   node tools/neis-dev-loop/run.mjs --no-reload 확장을 새로 불러오지 않고 실행
-//   node tools/neis-dev-loop/run.mjs --discard   임시 문구 버리기(다시 조회)만
+//   node tools/neis-dev-loop/run.mjs --discard   예시 문구 버리기(다시 조회)만
 //
-// 출력에는 학생 이름·학생부 문구가 나오지 않는다 (숫자와 행 번호만). 화면 구조는 진단 파일(가린 것)로 본다.
+// 예시 데이터는 학생 10명, 묶음 하나라서 자동 입력이 [저장]을 누르지 않는다. 끝나면 다시 조회해 버린다.
+// 출력에는 학생 이름·학생부 문구가 나오지 않는다 (숫자만). 화면 구조는 로그·진단 파일(가린 것)로 본다.
 // 저장·삭제 버튼은 절대 누르지 않는다. 페이지를 새로고침하지 않는다.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +36,9 @@ async function discardTemp() {
   const text = (e) => (e?.textContent || '').replace(/\s+/g, ' ').trim();
   const panel = [...document.querySelectorAll('[role=tabpanel]')].find(visible);
   if (!panel) return { done: true, note: '열린 화면 없음' };
-  const temps = () => [...panel.querySelectorAll('textarea')].filter((t) => t.value.startsWith('[임시 ')).length;
+  const tagged = (v) => /^\s*\[(임시|예시) /.test(v || '');
+  const temps = () => [...panel.querySelectorAll('[role=row] textarea')].filter((t) => tagged(t.value)).length
+    + [...panel.querySelectorAll('[role=row] [role=gridcell]')].filter((c) => !c.querySelector('textarea') && tagged(c.textContent)).length;
   if (!temps()) return { done: true, note: '임시 문구 없음' };
   const q = [...panel.querySelectorAll('[role=button], button')].find((b) => visible(b) && text(b) === '조회');
   if (!q) return { done: false, note: '조회 버튼을 찾지 못함' };
@@ -63,56 +67,14 @@ function studentNames() {
   return [...out].filter((n) => n.length >= 2);
 }
 
-// 입력 결과 검증 (숫자만 돌려준다)
-function verifyGrid() {
-  const visible = (e) => e && e.getClientRects().length > 0;
-  const text = (e) => (e?.textContent || '').replace(/\s+/g, ' ').trim();
-  const panel = [...document.querySelectorAll('[role=tabpanel]')].find(visible);
-  if (!panel) return { error: '열린 화면 없음' };
-  const grid = panel.querySelector('[role=grid]') || panel;
-  const rows = [...grid.querySelectorAll('[role=row][aria-rowindex]')]
-    .filter((r) => r.querySelector('[role=gridcell]') && !r.querySelector('[role=columnheader]'));
-  const editorOf = (r) => [...r.querySelectorAll('textarea')].find((t) => !t.disabled && !t.readOnly);
-  const nameOf = (r) => {
-    const c = [...r.querySelectorAll('[role=gridcell]')].find((x) => /^\d+행 (마지막 행 )?성명 /.test(x.getAttribute('aria-label') || ''));
-    return c ? c.getAttribute('aria-label').replace(/^\d+행 (마지막 행 )?성명 /, '').trim() : '';
-  };
-  // 글자수/바이트 열: 머리글 이름으로 찾고, 같은 열 번호(data-cellindex → aria-colindex)의 칸을 읽는다
-  const headers = [...grid.querySelectorAll('[role=columnheader]')];
-  const counterHead = headers.find((h) => /글자|바이트/.test(h.getAttribute('aria-label') || text(h)));
-  const colKey = (c) => c?.getAttribute('data-cellindex') ?? c?.getAttribute('aria-colindex');
-  const counterOf = (r) => {
-    if (!counterHead) return null;
-    const k = colKey(counterHead);
-    const cell = [...r.querySelectorAll('[role=gridcell]')].find((c) => colKey(c) === k);
-    return cell ? text(cell) : null;
-  };
-  const start = rows.findIndex(editorOf);
-  const work = start < 0 ? [] : rows.slice(start);
-  let editable = 0, matched = 0, counterChanged = 0;
-  const mismatchRows = [], notCommittedRows = [];
-  work.forEach((r, i) => {
-    const ed = editorOf(r);
-    if (!ed) return;
-    editable++;
-    const no = Number(r.getAttribute('aria-rowindex')) - 1;
-    if (ed.value.startsWith(`[임시 ${i + 1}] ${nameOf(r)} `)) matched++; else mismatchRows.push(no);
-    const cnt = counterOf(r);
-    if (cnt !== null && cnt && !/^0(\D|$)/.test(cnt)) counterChanged++; else notCommittedRows.push(no);
-  });
-  return {
-    화면: text(panel.querySelector('h1')),
-    조회조건: [...panel.querySelectorAll('[role=combobox]')].filter((b) => !b.closest('[role=row][aria-rowindex]'))
-      .map((b) => b.getAttribute('aria-label')),
-    학생행: rows.length,
-    입력가능행: editable,
-    이름일치: matched,
-    어긋난행: mismatchRows.slice(0, 30),
-    글자수열: counterHead ? (counterHead.getAttribute('aria-label') || text(counterHead)) : null,
-    글자수바뀜: counterChanged,
-    글자수안바뀐행: notCommittedRows.slice(0, 30),
-    글자수예시: work.slice(0, 3).map(counterOf),
-  };
+// 입력 결과 검증: neis-pages.js 의 verifySampleTextsInPage (행마다 [예시 반/번호] 가 그 행의 반/번호와 같은지, 숫자만)
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+function pageFnSource(file, name) {
+  const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  const i = src.indexOf(`async function ${name}(`);
+  const j = src.indexOf('\n}\n', i);
+  if (i < 0 || j < 0) throw new Error(`${file} 에서 ${name} 를 찾지 못함`);
+  return src.slice(i, j + 2);
 }
 
 // ── 실행 ────────────────────────────────────────────────────
@@ -121,10 +83,10 @@ let neisConn, panelConn;
 
 // 코드 점검: 문법 오류가 있으면 확장 프로그램이 조용히 안 돌기 때문에 나이스에 손대기 전에 확인한다
 function preflight() {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const root = ROOT;
   const errs = [];
   try { JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')); } catch (e) { errs.push(`manifest.json: ${e.message}`); }
-  for (const f of ['background.js', 'sidepanel.js', 'dev-tools.js']) {
+  for (const f of ['background.js', 'neis-pages.js', 'sidepanel.js', 'dev-tools.js']) {
     try { execFileSync(process.execPath, ['--check', path.join(root, f)], { stdio: 'pipe' }); } catch (e) {
       errs.push(`${f}: ${String(e.stderr || e.message).split('\n').filter(Boolean).slice(0, 4).join(' | ')}`);
     }
@@ -171,44 +133,43 @@ try {
   const panel = await openSidePanel(ext.id, neis);
   panelConn = await connect(panel.webSocketDebuggerUrl);
   await sleep(800);
-  const hasBtn = await panelConn.ev(`!!document.getElementById('btnDevQuickQuery') && !document.getElementById('devTools').hidden`);
-  if (!hasBtn) { result.사유.push('사이드패널에 개발용 버튼이 없음 (압축해제 설치인지, dev-tools.js 가 실행 중 오류로 멈췄는지 확인)'); throw null; }
+  const kind = args.has('--seteuk') ? 'seteuk' : 'behavior';
+  const sampleBtn = kind === 'seteuk' ? 'btnDevSampleSeteuk' : 'btnDevSampleBehavior';
+  const hasBtn = await panelConn.ev(`!!document.getElementById('${sampleBtn}') && !document.getElementById('devTools').hidden`);
+  if (!hasBtn) { result.사유.push('사이드패널에 개발용 예시 버튼이 없음 (압축해제 설치인지, dev-tools.js 가 실행 중 오류로 멈췄는지 확인)'); throw null; }
 
-  log('개발용 버튼 클릭');
-  await panelConn.ev(`document.getElementById('btnDevQuickQuery').click()`);
-  let status = '', prev = '', otpTold = false, reacted = false;
-  const clickedAt = Date.now();
-  const deadline = clickedAt + 6 * 60 * 1000;
+  log(`${kind === 'seteuk' ? '과세특' : '행발'} 예시 받기 → 자동 입력`);
+  await panelConn.ev(`document.getElementById('${sampleBtn}').click()`);
+  await sleep(800);
+  result.받기 = safeStatus(await panelConn.ev(`document.getElementById('devSampleStatus').textContent`)).split(' / ')[0];
+  result.실행버튼 = await panelConn.ev(`document.getElementById('btnExecute').textContent`);
+  await panelConn.ev(`document.getElementById('btnExecute').click()`);
+  let status = '', prev = '', otpTold = false, popup = '';
+  const deadline = Date.now() + 6 * 60 * 1000;
   while (Date.now() < deadline) {
     await sleep(500);
-    status = await panelConn.ev(`document.getElementById('devQuickQueryStatus').textContent`);
-    if (status !== prev) { log('상태줄:', safeStatus(status)); prev = status; }
-    if (!otpTold && await neisConn.call(otpVisible)) { otpTold = true; log('👤 2차인증 창이 떴습니다. 사람이 직접 인증해 주세요 (최대 3분).'); }
-    const busy = await panelConn.ev(`document.getElementById('btnDevQuickQuery').disabled`);
-    if (busy || status) reacted = true;
-    // 15초 동안 아무 반응이 없으면 클릭 처리기가 붙지 않은 것 (스크립트 실행 오류 등)
-    if (!reacted && Date.now() - clickedAt > 15000) { status = ''; result.사유.push('버튼을 눌러도 반응이 없음 (dev-tools.js 실행 오류 의심, 사이드패널 콘솔 확인)'); break; }
-    if (!busy && /^(완료|실패)/.test(status)) break;
-  }
-  result.상태줄 = safeStatus(status);
-  result.완료팝업 = await panelConn.ev(`document.getElementById('nsModalOverlay')?.classList.contains('open') ? document.getElementById('nsModalMsg').textContent : ''`);
-  await panelConn.ev(`document.getElementById('nsModalOk')?.click()`);
-  result.진단파일 = diagFilesSince(startedAt);
-
-  if (!status.startsWith('완료')) {
-    if (status) result.사유.push(`버튼 실패: ${safeStatus(status)}`);
-    else if (reacted) result.사유.push('6분 안에 끝나지 않음 (어느 단계에서 멈췄는지는 진단 파일 참고)');
-  } else {
-    const v = await neisConn.call(verifyGrid);
-    result.검증 = v;
-    if (v.error) result.사유.push(v.error);
-    else {
-      if (!v.입력가능행) result.사유.push('입력 가능한 학생 행이 없음');
-      if (v.이름일치 !== v.입력가능행) result.사유.push(`이름 불일치: ${v.입력가능행 - v.이름일치}행 (행 번호 ${v.어긋난행.join(', ')})`);
-      if (!v.글자수열) result.사유.push('글자수/바이트 열을 찾지 못함 (반영 여부 확인 불가)');
-      else if (v.글자수바뀜 !== v.입력가능행) result.사유.push(`글자수 칸이 안 바뀐 행 ${v.입력가능행 - v.글자수바뀜}개 (나이스 내부 미반영 의심, 행 번호 ${v.글자수안바뀐행.join(', ')})`);
+    status = await panelConn.ev(`document.getElementById('autoStatus').textContent`);
+    if (status && status !== prev) { log('상태줄:', safeStatus(status)); prev = status; }
+    if (!otpTold && await neisConn.call(otpVisible)) { otpTold = true; log('👤 2차인증 창이 떴습니다. 사람이 직접 인증해 주세요.'); }
+    if (await panelConn.ev(`document.getElementById('nsModalOverlay')?.classList.contains('open')`)) {
+      popup = await panelConn.ev(`document.getElementById('nsModalMsg').textContent`);
+      break;
     }
-    if (/진단 파일 저장/.test(status)) result.사유.push('버튼이 입력 부족으로 진단 파일을 저장함');
+  }
+  await panelConn.ev(`document.getElementById('nsModalOk')?.click()`);
+  // 팝업 글에는 학생 이름이 없다 (반/번호·숫자만). 첫 3줄만 남긴다
+  result.완료팝업 = popup.split('\n').filter(Boolean).slice(0, 3).join(' / ');
+  result.진단파일 = diagFilesSince(startedAt);
+  if (!popup) result.사유.push('6분 안에 끝나지 않음');
+  else if (/멈췄습니다/.test(popup)) result.사유.push(`자동 입력 멈춤: ${result.완료팝업}`);
+  else {
+    const v = await neisConn.ev(`(${pageFnSource('neis-pages.js', 'verifySampleTextsInPage')})()`);
+    result.검증 = v;
+    if (!v?.ok) result.사유.push('검증할 표를 찾지 못함');
+    else {
+      if (v.right !== 10) result.사유.push(`맞는 행 ${v.right}/10`);
+      if (v.wrong) result.사유.push(`엉뚱한 행 ${v.wrong}`);
+    }
     result.목표달성 = result.사유.length === 0;
   }
 
