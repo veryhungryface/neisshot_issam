@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>문서보기 | 업무관리시스템</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<div class="pop-head">문서보기</div>
+<div class="pop-body">
+  <div class="btns" id="docBtns">
+    <a href="#" class="Lbtn" data-op="결재">결재</a><a href="#" class="Lbtn" data-op="반려">반려</a><a href="#" class="Lbtn" data-op="보류">보류</a>
+    <a href="#" class="Lbtn" data-op="문서의견">문서의견</a><a href="#" class="Lbtn" data-op="닫기">닫기</a>
+  </div>
+  <table class="info" summary="문서 정보"><caption style="position:absolute;left:-9999px">문서 정보</caption><tbody>
+    <tr><th scope="row">문서번호</th><td id="docNo"></td><th scope="row">기안일시</th><td id="docDate"></td></tr>
+    <tr><th scope="row">제목</th><td id="docTitle" colspan="3"></td></tr>
+    <tr><th scope="row">기안부서</th><td id="docDept"></td><th scope="row">결재경로</th><td id="docPath"></td></tr>
+  </tbody></table>
+  <!-- the real document body renders in a separate viewer frame -->
+  <iframe class="viewer" id="docViewer" title="문서 본문"></iframe>
+  <p id="batchNote"></p>
+</div>
+<script src="common.js"></script>
+<script>
+(async function () {
+  var q = new URLSearchParams(location.search), id = q.get('id'), batch = (q.get('batch') || '').split(',').filter(Boolean);
+  var r = await post('doc/view', { id: id });
+  if (r.error) { document.body.textContent = r.error; return; }
+  var d = r.doc;
+  docNo.textContent = d.no; docDate.textContent = d.date; docTitle.textContent = d.title; docDept.textContent = d.dept;
+  docPath.textContent = d.drafter + ' → 교감 → 교장(모의)';
+  docViewer.srcdoc = '<html><body style="font:14px/1.8 serif;padding:24px"><h2 style="text-align:center">' + d.title + '</h2><pre style="white-space:pre-wrap;font:inherit">' + r.body + '</pre></body></html>';
+  if (batch.length > 1) batchNote.textContent = '일괄결재: ' + batch.length + '건 선택됨';
+  document.querySelectorAll('#docBtns .Lbtn').forEach(function (b) {
+    b.onclick = async function (e) {
+      e.preventDefault();
+      var op = b.getAttribute('data-op');
+      if (op === '닫기') return window.close();
+      if (op === '문서의견' || op === '보류') return alert(op + ': 연습장에서는 동작하지 않습니다.');
+      if (!confirm(op + '하시겠습니까?')) return;
+      var pw = await esignPrompt(op);
+      if (pw === null) return;
+      var res = await post('doc/sanction', { ids: batch.length ? batch : [id], op: op, password: pw });
+      alert(res.message || res.error);
+      if (res.ok) window.close();
+    };
+  });
+})();
+</script>
+</body></html>

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>결재요청 | K-에듀파인(연습용)</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<div class="pop-head">결재요청</div>
+<div class="pop-body">
+  <table class="info" summary="품의 정보"><tbody>
+    <tr><th scope="row">품의번호</th><td id="no"></td></tr>
+    <tr><th scope="row">결재경로</th><td>품의자: 모의교사 → 행정실장(모의) → 교장(모의)</td></tr>
+  </tbody></table>
+  <div class="btns"><a href="#" class="Lbtn" id="btnReq">결재요청</a><a href="#" class="Lbtn" id="btnClose">닫기</a></div>
+</div>
+<script src="common.js"></script>
+<script>
+(function () {
+  var n = new URLSearchParams(location.search).get('no'); no.textContent = n;
+  btnReq.onclick = async function (e) {
+    e.preventDefault();
+    if (!confirm('결재요청하시겠습니까?')) return;
+    var pw = await esignPrompt('결재요청');
+    if (pw === null) return;
+    var r = await post('cnsul/request', { no: n, password: pw });
+    alert(r.message || r.error);
+    if (r.ok) window.close();
+  };
+  btnClose.onclick = function (e) { e.preventDefault(); window.close(); };
+})();
+</script>
+</body></html>

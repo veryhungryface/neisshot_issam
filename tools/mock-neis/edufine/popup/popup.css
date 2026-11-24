@@ -1,0 +1,14 @@
+body { margin: 0; font: 13px/1.6 "Malgun Gothic", sans-serif; color: #222; }
+.pop-head { background: #3e6b2a; color: #fff; padding: 8px 14px; font-weight: 700; }
+.pop-body { padding: 12px 14px; }
+.Lbtn { display: inline-block; border: 1px solid #5a8a3a; background: #6b9e46; color: #fff; padding: 3px 12px; margin-left: 4px; text-decoration: none; border-radius: 2px; cursor: pointer; }
+.btns { text-align: right; margin: 8px 0; }
+table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+table.info th { background: #f0f4ec; width: 120px; text-align: left; padding: 5px; border: 1px solid #d5dccd; }
+table.info td { padding: 5px; border: 1px solid #d5dccd; }
+iframe.viewer, iframe.editor { width: 100%; height: 420px; border: 1px solid #aaa; background: #fff; }
+.shade { position: fixed; inset: 0; background: rgba(0,0,0,.35); }
+.esign { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); background: #fff; border: 2px solid #3e6b2a; padding: 16px 20px; width: 420px; }
+.esign h4 { margin: 0 0 6px; }
+.esign .row { margin-top: 12px; text-align: right; }
+.path-list li { margin: 2px 0; }

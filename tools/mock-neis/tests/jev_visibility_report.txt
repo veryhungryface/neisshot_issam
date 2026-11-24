@@ -1,0 +1,5 @@
+나이스 첫 화면: actions=13 covered=0 | 복무:X, 교과담임:O, 개인초과근무관리:X
+나이스 초과근무 화면: actions=88 covered=0 | 신청(새 창 열기):O, 근무종별:O, 1행 선택:O, 삭제:O
+나이스 신청 대화상자: actions=13 covered=86 | 초과근무일자:O, 시작시간:O, 하여야 할 일:O, 저장:O, 개인초과근무관리 닫기:X
+에듀파인 첫 화면: actions=17 covered=0 | 문서관리:O, 학교회계:O, 결재:O, 기안:O
+에듀파인 결재대기(JSP iframe): actions=24 covered=0 | 결재대기:O, 체육대회 물품 구입 요청:X, 조회:X, 일괄결재:X

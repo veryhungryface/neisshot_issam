@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>기안문작성 | 업무관리시스템</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<div class="pop-head">기안문 작성</div>
+<div class="pop-body">
+  <div class="btns">
+    <a href="#" class="Lbtn" id="btnPath">결재경로</a><a href="#" class="Lbtn" id="btnTemp">임시저장</a>
+    <a href="#" class="Lbtn" id="btnSubmit">상신</a><a href="#" class="Lbtn" id="btnPreview">미리보기</a><a href="#" class="Lbtn" id="btnClose">닫기</a>
+  </div>
+  <form name="draftForm" onsubmit="return false">
+  <table class="info" summary="기안 정보"><caption style="position:absolute;left:-9999px">기안 정보</caption><tbody>
+    <tr><th scope="row">서식</th><td id="fmtName"></td></tr>
+    <tr><th scope="row"><label for="sj">제목</label></th><td><input type="text" id="sj" name="sj" title="제목" style="width:90%"></td></tr>
+    <tr><th scope="row">결재경로</th><td><ul class="path-list" id="pathList"><li>기안: 모의교사</li></ul></td></tr>
+  </tbody></table>
+  </form>
+  <!-- the real editor (웹 한글 편집기) lives in its own frame -->
+  <iframe class="editor" id="hwpEditor" title="본문 편집기"></iframe>
+</div>
+<script src="common.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), fmt = q.get('format');
+  var names = { F01: '일반기안문', F02: '시행문', F03: '출장계획서', F04: '물품구입요청서', F05: '회의록', F06: '연계기안문(나이스)', F07: '조례안 서식', F08: '행사계획서' };
+  fmtName.textContent = names[fmt] || fmt;
+  hwpEditor.srcdoc = '<html><body contenteditable="true" aria-label="본문" role="textbox" aria-multiline="true" style="font:14px/1.8 serif;padding:20px;min-height:340px;outline:0"><p><br></p></body></html>';
+  var path = [];
+  var bodyText = function () { return hwpEditor.contentDocument.body.innerText.trim(); };
+  btnPath.onclick = function (e) {
+    e.preventDefault();
+    path = ['교감(모의)', '교장(모의)'];
+    pathList.innerHTML = '<li>기안: 모의교사</li><li>검토: 교감(모의)</li><li>결재: 교장(모의)</li>';
+    alert('기본 결재경로를 지정했습니다.');
+  };
+  btnTemp.onclick = async function (e) {
+    e.preventDefault();
+    var r = await post('draft/save', { format: fmt, title: sj.value.trim(), body: bodyText(), path: path, op: '임시저장' });
+    alert(r.message || r.error);
+  };
+  btnSubmit.onclick = async function (e) {
+    e.preventDefault();
+    if (!path.length) { alert('결재경로를 지정하세요.'); return; }
+    if (!confirm('상신하시겠습니까?')) return;
+    var pw = await esignPrompt('상신');
+    if (pw === null) return;
+    var r = await post('draft/save', { format: fmt, title: sj.value.trim(), body: bodyText(), path: path, op: '상신', password: pw });
+    alert(r.message || r.error);
+    if (r.ok) window.close();
+  };
+  btnPreview.onclick = function (e) { e.preventDefault(); alert('미리보기는 연습장에서 지원하지 않습니다.'); };
+  btnClose.onclick = function (e) { e.preventDefault(); window.close(); };
+})();
+</script>
+</body></html>

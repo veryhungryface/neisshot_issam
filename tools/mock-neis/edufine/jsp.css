@@ -1,0 +1,21 @@
+body { margin: 0; font: 13px/1.5 "Malgun Gothic", sans-serif; color: #222; }
+#LblockSkipLink a { position: absolute; left: -9999px; }
+#LblockWrapper { padding: 10px 14px; }
+#LblockPageTitle h3 { margin: 0 0 8px; font-size: 16px; }
+.LblockButton { text-align: right; margin-bottom: 6px; }
+.Lbtn, .Lbtn3 { display: inline-block; border: 1px solid #5a8a3a; background: #6b9e46; color: #fff; padding: 2px 9px; margin-left: 3px; text-decoration: none; border-radius: 2px; }
+.LblockSearch { border: 1px solid #b8d39b; background: #f3f9ec; padding: 8px; margin-bottom: 8px; display: flex; gap: 10px; align-items: flex-start; }
+.LblockSearch table { flex: 1; border-collapse: collapse; }
+.LblockSearch th { text-align: left; font-weight: 600; padding: 3px 8px; width: 130px; }
+.LblockSearch caption, .LblockListTable caption { position: absolute; left: -9999px; }
+.Ltext { width: 220px; }
+.LblockListTable table { width: 100%; border-collapse: collapse; }
+.LblockListTable th { background: #4c4c4c; color: #fff; padding: 5px; font-weight: 600; }
+.LblockListTable td { border-bottom: 1px solid #ddd; padding: 5px; }
+.ellipsis { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.LtextLeft { text-align: left; }
+.Lnodata { text-align: center; color: #777; padding: 24px; }
+.paging { text-align: center; margin-top: 8px; }
+.sandbox-note { color: #888; font-size: 11px; margin-top: 12px; }
+.LblockSearchTables { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.LblockListTop { text-align: right; margin-bottom: 4px; }
