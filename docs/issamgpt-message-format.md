@@ -42,6 +42,22 @@ chrome.runtime.sendMessage(EXTENSION_ID, payload, (res) => {
 }
 ```
 
+### 초등 학급담임 (교과 세특)
+
+초등도 `category: 'seteuk'` 로 보낸다. 확장 프로그램이 나이스에 '교과담임' 역할이 없고 '학급담임'이 있으면
+**학급담임 › 성적 › 학생평가 › 학기말종합의견** 화면으로 들어가 교과(목)별로 조회해 넣는다.
+
+```js
+{
+  type: 'NEISSHOT_DATA', category: 'seteuk', subject: '국어',
+  query: { year: '2026', semester: '2', grade: '6', ban: '1', subject: '국어' },   // room(강의실) 없음, subject 는 교과(목)
+  students: [ { ban: '1', no: 1, name: '홍길동', text: '...' }, ... ],
+}
+```
+
+- 교과가 여러 개면 `groups` 로 교과마다 묶음을 나눈다 (묶음마다 조회 → 입력 → 저장).
+- `semester` 는 `'2'`, `'2학기'` 모두 된다 (초등 화면의 학기 칸은 `2` 처럼 숫자만).
+
 ### 여러 묶음 (과세특: 학년·과목·강의실이 다른 학생을 한 번에)
 
 조회조건이 다른 학생들을 한 번에 보낼 때는 `query` + `students` 대신 `groups` 를 쓴다.

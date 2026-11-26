@@ -6,6 +6,10 @@
     alert, error, confirm, busy, api, press, uid } = CL;
   const SPEC = await (await fetch('/data/neis.json')).json();
   const MENU = Object.fromEntries(SPEC.menus.map((m) => [m.code, m]));
+  // ?school=elem → 초등 학급담임 계정처럼: 교과담임·○-○담임·동아리담임·부서장 역할이 없다 (2026-11-26 정식 나이스 로그)
+  if (new URLSearchParams(location.search).get('school') === 'elem') {
+    SPEC.roles = SPEC.roles.filter((c) => !['002002', '118001', '002003', '101000'].includes(c));
+  }
   const KIDS = {};
   SPEC.menus.forEach((m) => { (KIDS[m.parent] = KIDS[m.parent] || []).push(m.code); });
   Object.values(KIDS).forEach((k) => k.sort());   // NEIS menu codes run in display order (AMCMC40043, 40044 …)
@@ -656,6 +660,15 @@
       excelGrid: { label: '과목별 세부능력 및 특기사항 엑셀다운로드 그리드',
         cols: ['학년도', '학기', '학년', '학생개인번호', '과목', '과목코드', '반/번호', '성명', '학적변동\n구분', '세부능력 및 특기사항', '영재·발명교육 기록사항'] },
       btns: ['셀 크기 상하로 확대', '셀 크기 상하로 축소', '엑셀내려받기', '엑셀업로드', '저장', '삭제'] },
+    // 초등 학급담임 교과 세특: 학급담임 › 성적 › 학생평가 › 학기말종합의견 (2026-11-26 정식 나이스 로그).
+    // 정식 나이스처럼 학년·반·교과(목) 조회조건의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다 (보이는 글자는 맞음).
+    학기말종합의견: { by: 'elem', conds: [['학년도', ['2026', '2025'], '2026'], ['학기', ['1', '2'], '2'], ['학년', [NONE, '1', '2', '3', '4', '5', '6'], '6'],
+        ['반', [NONE, '1', '2', '3', '4', '5'], '1'], ['교과(목)', ['국어', '사회', '수학', '과학', '영어', '도덕', '실과', '체육', '음악', '미술'], '국어']],
+      ariaNames: { 학년: '학기', 반: '학기', '교과(목)': '학기' },
+      text: '학기말 종합의견', limit: 1500, unit: 'byte', hideSearch: true, title: '학기말종합의견', gridLabel: '학기말종합의견 그리드',
+      grid: { scrollbar: true, height: 508, rowHeight: 117 },
+      cols: [['반/번호', 80, null, { aria: '번호' }], ['성명', 90], ['참고자료', 90, null, { aria: '조회/가져오기' }], ['학기말 종합의견', 0, 'textarea', { aria: '마지막' }]],
+      btns: ['학생/학부모서비스 일괄반영', '관찰내용일괄복사', '교과평가일괄복사', '저장', '삭제'] },
     과목별독서활동: { by: 'subject', text: '독서활동상황', limit: 1500, unit: 'byte', fontBtns: true, hideSearch: true, title: '',
       cols: [['반/번호', 80], ['성명', 90], ['학적변동구분', 90], ['입력가능글자 (Byte)', 110, 'count'], ['독서활동상황', 0, 'textarea']],
       btns: ['입력창확대', '입력창축소', '일괄입력', '저장', '삭제', '출력'] },
@@ -702,7 +715,7 @@
     }
     const box = el('div', { class: 'cl-control cl-container search-box', id: uid() });
     conds.forEach(([n, opts, v]) => {
-      ctl[n] = combo(n, opts, v);
+      ctl[n] = combo(cfg.ariaNames?.[n] || n, opts, v);
       box.append(field(label(n, { required: true }), ctl[n]));
     });
     if (cfg.by === 'subject' && /세부능력/.test(sc.name)) box.append(field(null, checkbox('개별출력', false, { text: '개별출력' })));
@@ -745,6 +758,7 @@
       const miss = conds.find(([n]) => c[n] === NONE);
       if (miss) return alert(`${miss[0]}을(를) 선택하십시오.`);
       const k = cfg.by === 'subject' ? `${c['학년도']}|${c['학기']}|${c['과목']}|${c['강의실']}`
+        : cfg.by === 'elem' ? `${c['학년도']}|${c['학기']}|${c['학년']}|${c['반']}|${c['교과(목)']}`
         : `${c['학년도']}|${c['학년']}|${c['반']}` + (cfg.semester ? `|${c['학기']}` : '');
       busy(true, root);
       const r = await api('roster.do', { screen: sc.name, key: k, cond: c });

@@ -52,7 +52,7 @@ const SOURCE_GUIDES = [
   {
     keys: ['seteuk', '과세특', '세특', '과목별세부능력', '세부능력및특기사항'],
     sourceLabel: '과세특',
-    menuPath: '교과담임-성적-성적처리-과목별세부능력및특기사항',
+    menuPath: '교과담임-성적-성적처리-과목별세부능력및특기사항 (초등: 학급담임-성적-학생평가-학기말종합의견)',
     tabCount: 2,
     titleType: 'seteuk',
   },
@@ -949,11 +949,27 @@ async function applyNeisQueryInPage(q) {
   // 조회조건 이름 (나이스 화면마다 다름: 과세특은 '계열/학년/학과', 행특은 '학년')
   const FIELDS = [
     ['year', ['학년도']], ['semester', ['학기']], ['grade', ['계열/학년/학과', '학년']],
-    ['ban', ['반']], ['subject', ['과목']], ['room', ['강의실']],
+    ['ban', ['반']], ['subject', ['과목', '교과(목)', '교과']], ['room', ['강의실']],
   ];
-  const labelOf = (b) => b.getAttribute('aria-label') || '';
-  const comboFor = (names) => combos.find((b) => names.some((n) => labelOf(b).startsWith(`${n}, `)));
-  const current = (b) => labelOf(b).replace(/^[^,]*,\s*/, '');
+  // 조회조건 칸 이름: 칸 앞에 보이는 이름표(label) 글자. 없으면 aria-label 앞부분.
+  //  (초등 학기말종합의견은 학년·반·교과(목) 칸의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다, 2026-11-26 정식 나이스)
+  const condName = (b) => {
+    const al = (b.getAttribute('aria-label') || '').split(',')[0].replace(/\s+/g, '');
+    for (let e = b; e && e.getAttribute?.('role') !== 'tabpanel'; e = e.parentElement) {
+      if (e !== b && e.querySelectorAll('[role=combobox]').length > 1) break;
+      for (let p = e.previousElementSibling; p; p = p.previousElementSibling) {
+        if (/(^|\s)label(\s|$)/.test(String(p.className || ''))) {
+          const t = (p.textContent || '').replace(/필수입력/g, '').replace(/\s+/g, '');
+          if (t) return t;
+        }
+      }
+    }
+    return al;
+  };
+  // 칸의 지금 값 (aria-label 의 쉼표 뒤. 이름표가 틀려도 값은 맞다)
+  const condValue = (b) => (b.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
+  const comboFor = (names) => combos.find((b) => names.map((n) => n.replace(/\s+/g, '')).includes(condName(b)));
+  const current = condValue;
   // 항목과 받은 값이 맞는 정도: 3 같음, 2 '학기'·'반' 등을 붙이면 같음, 1 받은 값 뒤에 '(' 로 덧붙은 것 (공통수학2 → 공통수학2(4))
   const score = (opt, want, key) => {
     const o = norm(opt), w = norm(want);
@@ -961,6 +977,8 @@ async function applyNeisQueryInPage(q) {
     if (o === w) return 3;
     const suffix = { semester: '학기', ban: '반', grade: '학년', year: '학년도' }[key];
     if (suffix && o === w + suffix) return 2;
+    // 반대로 받은 값에만 붙은 경우 ('2학기' → 초등 화면의 '2', 2026-11-26)
+    if (suffix && w === o + suffix) return 2;
     if (o.startsWith(`${w}(`)) return 1;
     return 0;
   };
@@ -990,7 +1008,7 @@ async function applyNeisQueryInPage(q) {
     if (q[key] === undefined) continue;
     const box = comboFor(names);
     if (!box) { notOnScreen.push(names[0]); continue; }
-    const name = labelOf(box).split(',')[0];
+    const name = condName(box);
     if (score(current(box), q[key], key) > 0) { done.push(`${name} ${current(box)}`); continue; }
     box.click();
     let opts = null;
@@ -1226,9 +1244,15 @@ async function runAutoInput(screen) {
     // 1) 화면 열기 (한 번)
     say(`${label}: 나이스 화면 여는 중... (2차인증 창이 뜨면 번호를 넣어 주세요)`);
     const q0 = plan[0].g.query || {};
-    const opened = screen === 'seteuk'
-      ? pickNeisFrameResult(await run(openSeteukScreen, [NEIS_PAGE_TIMEOUTS]))
+    let opened = screen === 'seteuk'
+      ? pickNeisFrameResult(await run(openSeteukScreen, [NEIS_PAGE_TIMEOUTS, 'secondary']))
       : pickNeisFrameResult(await run(runNeisQuery, [{ grade: q0.grade || '', cls: q0.ban || '' }, '행동특성및종합의견', NEIS_PAGE_TIMEOUTS, false]));
+    // 과세특: 교과담임 역할이 없고 학급담임이 있으면 초등 화면(학급담임 › 성적 › 학생평가 › 학기말종합의견)으로 다시 연다
+    if (screen === 'seteuk' && !opened?.ok && opened?.noRole && (opened.roles || []).some((r) => r === '학급담임')) {
+      say(`${label}: 초등 학급담임 화면(학기말종합의견)으로 여는 중... (2차인증 창이 뜨면 번호를 넣어 주세요)`);
+      opened = pickNeisFrameResult(await run(openSeteukScreen, [NEIS_PAGE_TIMEOUTS, 'elementary']));
+      if (log) log.note?.({ 학교급: '초등' });
+    }
     stage = `화면 열기 (${opened?.step || '?'})`;
     if (!opened?.ok) throw new Error(`화면을 열지 못했습니다 (${opened?.step || '?'}): ${opened?.error || '나이스 화면을 찾지 못함'}`);
     await mark('화면 열림');

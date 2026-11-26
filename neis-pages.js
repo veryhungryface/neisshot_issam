@@ -60,8 +60,25 @@ async function runNeisQuery(conds, screenName, T, capture) {
     const byTab = tab && [...document.querySelectorAll('[role=tabpanel]')].find((p) => p.getAttribute('aria-labelledby') === tab.id && visible(p));
     return byTab || [...document.querySelectorAll('[role=tabpanel]')].find((p) => visible(p) && !p.closest('[role=dialog]'));
   };
+  // 조회조건 칸 이름: 칸 앞에 보이는 이름표(label) 글자. 없으면 aria-label 앞부분.
+  //  (초등 학기말종합의견은 학년·반·교과(목) 칸의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다, 2026-11-26 정식 나이스)
+  const condName = (b) => {
+    const al = (b.getAttribute('aria-label') || '').split(',')[0].replace(/\s+/g, '');
+    for (let e = b; e && e.getAttribute?.('role') !== 'tabpanel'; e = e.parentElement) {
+      if (e !== b && e.querySelectorAll('[role=combobox]').length > 1) break;
+      for (let p = e.previousElementSibling; p; p = p.previousElementSibling) {
+        if (/(^|\s)label(\s|$)/.test(String(p.className || ''))) {
+          const t = (p.textContent || '').replace(/필수입력/g, '').replace(/\s+/g, '');
+          if (t) return t;
+        }
+      }
+    }
+    return al;
+  };
+  // 칸의 지금 값 (aria-label 의 쉼표 뒤. 이름표가 틀려도 값은 맞다)
+  const condValue = (b) => (b.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
   const comboIn = (scope, name) => [...scope.querySelectorAll('[role=combobox]')]
-    .find((b) => (b.getAttribute('aria-label') || '').startsWith(`${name}, `));
+    .find((b) => condName(b) === name.replace(/\s+/g, ''));
   // '처리중' 가림막: 화면 안이 아니라 페이지 전체에 뜰 수도 있어 문서 전체에서 찾는다
   const loadmaskVisible = () => [...document.querySelectorAll('.cl-loadmask')].some(visible);
   // 2차인증 창 (창 이름에 '인증'이 들어간 창) / 그 밖의 알림·확인 창 → 사람이 판단하도록 멈춘다
@@ -71,7 +88,7 @@ async function runNeisQuery(conds, screenName, T, capture) {
 
   const pickCombo = async (scope, name, value) => {
     const box = await waitFor(() => comboIn(scope, name), `${name} 조회조건`);
-    if (box.getAttribute('aria-label') === `${name}, ${value}`) return;
+    if (condValue(box) === value) return;
     box.click();
     const opt = await waitFor(() => {
       const lists = [...document.querySelectorAll('[role=listbox]')].filter(visible);
@@ -80,7 +97,7 @@ async function runNeisQuery(conds, screenName, T, capture) {
     }, `${name}=${value} 항목`);
     await snap(`목록 펼침 (${name})`);
     opt.click();
-    await waitFor(() => box.getAttribute('aria-label') === `${name}, ${value}`, `${name} 선택 반영`);
+    await waitFor(() => condValue(box) === value, `${name} 선택 반영`);
   };
 
   try {
@@ -156,7 +173,7 @@ async function runNeisQuery(conds, screenName, T, capture) {
     //    정식 나이스는 담임 역할로 들어가면 학년·반이 이미 골라져 있으므로 그 값을 그대로 쓴다.
     //    비어 있을 때('-없음-' 등, 모의 나이스의 기본값)만 conds 값으로 고른다.
     at(5, '조회조건');
-    const comboValue = (name) => (comboIn(panel, name)?.getAttribute('aria-label') || '').slice(name.length + 2).trim();
+    const comboValue = (name) => { const b = comboIn(panel, name); return b ? condValue(b) : ''; };
     const isEmpty = (v) => !v || /없음|선택/.test(v);
     for (const [name, value] of [['학년', conds.grade], ['반', conds.cls]]) {
       await waitFor(() => comboIn(panel, name), `${name} 조회조건`);
@@ -270,11 +287,20 @@ async function runNeisQuery(conds, screenName, T, capture) {
 //   · 왼쪽 메뉴: a.cl-sidenavigation-item (cl-folder 는 aria-expanded, cl-leaf 는 화면)
 //   · 화면 탭: [role=tab][aria-label="선택됨, 과목별세부능력및특기사항"]
 //   · 2차인증: [role=dialog][aria-label="2차인증"] (창 안에도 M-OTP 등 tab/tabpanel 이 있음)
-async function openSeteukScreen(T) {
-  const ROLE = '교과담임';
-  const MEGA_FOLDER = '성적';
-  const MEGA_LEAF = '성적처리';
-  const SCREEN = '과목별세부능력및특기사항';
+//   kind: 'secondary'(중고등, 기본) | 'elementary'(초등 학급담임)
+//     중고등: 교과담임 › 성적 › 성적처리 › 과목별세부능력및특기사항
+//     초등:   학급담임 › 성적 › 학생평가 › 학기말종합의견 (교과(목)마다 조회, 2026-11-26 정식 나이스 로그)
+//   역할이 없으면 { ok:false, noRole:true, roles:[…] } 를 돌려준다 (자동 입력이 다른 쪽으로 다시 시도)
+async function openSeteukScreen(T, kind = 'secondary') {
+  const SPEC = kind === 'elementary'
+    ? { ROLES: ['학급담임'], MEGA_FOLDER: '성적', MEGA_LEAF: '학생평가', SCREEN: '학기말종합의견', COND: ['교과(목)', '교과', '과목'] }
+    : { ROLES: ['교과담임'], MEGA_FOLDER: '성적', MEGA_LEAF: '성적처리', SCREEN: '과목별세부능력및특기사항', COND: ['과목'] };
+  const ROLE = SPEC.ROLES[0];
+  const MEGA_FOLDER = SPEC.MEGA_FOLDER;
+  const MEGA_LEAF = SPEC.MEGA_LEAF;
+  const SCREEN = SPEC.SCREEN;
+  let noRole = false;
+  let roleNames = [];
   let step = '시작';
   let stepNo = 0;
   const t0 = Date.now();
@@ -295,6 +321,23 @@ async function openSeteukScreen(T) {
   const visible = (e) => e && e.getClientRects().length > 0;
   const text = (e) => (e?.textContent || '').replace(/\s+/g, ' ').trim();
   const named = (e, name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(text(e));
+  // 조회조건 칸 이름: 칸 앞에 보이는 이름표(label) 글자. 없으면 aria-label 앞부분.
+  //  (초등 학기말종합의견은 학년·반·교과(목) 칸의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다, 2026-11-26 정식 나이스)
+  const condName = (b) => {
+    const al = (b.getAttribute('aria-label') || '').split(',')[0].replace(/\s+/g, '');
+    for (let e = b; e && e.getAttribute?.('role') !== 'tabpanel'; e = e.parentElement) {
+      if (e !== b && e.querySelectorAll('[role=combobox]').length > 1) break;
+      for (let p = e.previousElementSibling; p; p = p.previousElementSibling) {
+        if (/(^|\s)label(\s|$)/.test(String(p.className || ''))) {
+          const t = (p.textContent || '').replace(/필수입력/g, '').replace(/\s+/g, '');
+          if (t) return t;
+        }
+      }
+    }
+    return al;
+  };
+  // 칸의 지금 값 (aria-label 의 쉼표 뒤. 이름표가 틀려도 값은 맞다)
+  const condValue = (b) => (b.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
   const isAuthDialog = (d) => /인증/.test(d.getAttribute('aria-label') || '');
   const dialogs = () => [...document.querySelectorAll('[role=dialog]')].filter(visible);
   const otpDialog = () => dialogs().find(isAuthDialog);
@@ -358,8 +401,12 @@ async function openSeteukScreen(T) {
     let leaf = sideItem(SCREEN, 'leaf');
     if (!leaf) {
       at(2, `역할 '${ROLE}'`);
-      const role = roles.find((li) => named(li, ROLE));
-      if (!role) throw new Error(`상단에 '${ROLE}' 역할이 없습니다 (있는 역할: ${roles.map((li) => text(li).split(' ')[0]).join(', ')})`);
+      const role = roles.find((li) => SPEC.ROLES.some((r) => named(li, r)));
+      if (!role) {
+        noRole = true;
+        roleNames = roles.map((li) => text(li).split(' ')[0]);
+        throw new Error(`상단에 '${ROLE}' 역할이 없습니다 (있는 역할: ${roleNames.join(', ')})`);
+      }
       const roleLink = role.querySelector('a') || role;
 
       at(3, `메가메뉴 '${MEGA_FOLDER}' → '${MEGA_LEAF}'`);
@@ -403,7 +450,7 @@ async function openSeteukScreen(T) {
     at(5, '화면 열기 / 2차인증');
     const readyPanel = () => {
       const p = activePanel();
-      const hasCond = p && [...p.querySelectorAll('[role=combobox]')].some((b) => /^과목, /.test(b.getAttribute('aria-label') || ''));
+      const hasCond = p && [...p.querySelectorAll('[role=combobox]')].some((b) => SPEC.COND.includes(condName(b)));
       return selectedTab() && hasCond && !loadmaskVisible() && !otpDialog() ? p : null;
     };
     let panel = null;
@@ -426,11 +473,10 @@ async function openSeteukScreen(T) {
     }
 
     at(6, '완료');
-    const conds = [...panel.querySelectorAll('[role=combobox]')]
-      .map((b) => b.getAttribute('aria-label') || '').filter((v) => /^(학년도|학기|과정|계열\/학년\/학과|과목|강의실), /.test(v));
-    return { ok: true, stepNo, step, otpWaited, closed, conds, timeline };
+    const conds = [...panel.querySelectorAll('[role=combobox]')].map((b) => `${condName(b)}, ${condValue(b)}`);
+    return { ok: true, kind, stepNo, step, otpWaited, closed, conds, timeline };
   } catch (e) {
-    return { ok: false, stepNo, step, error: e.message, dialogText, timeline };
+    return { ok: false, kind, stepNo, step, error: e.message, dialogText, timeline, noRole, roles: roleNames };
   }
 }
 
@@ -481,7 +527,7 @@ async function openFirstEditorInPage(category) {
   for (let i = 0; i < 50 && !hasRows(grid); i++) { await wait(200); grid = findGrid(); }
   if (!grid) return { here: true, ok: false, error: '반/번호(번호) 열이 있는 학생 표를 찾지 못했습니다. 조회가 되었는지 확인해 주세요.' };
   if (!hasRows(grid)) return { here: true, ok: false, error: '표에 학생이 없습니다. 조회조건을 확인하고 [조회]가 되었는지 봐 주세요.' };
-  const want = { seteuk: ['세부능력및특기사항'], behavior: ['행동특성및종합의견'] }[category] || [];
+  const want = { seteuk: ['세부능력및특기사항', '학기말종합의견'], behavior: ['행동특성및종합의견'] }[category] || [];
   const rows = () => [...grid.querySelectorAll('[role=row][aria-rowindex]')].filter((r) => r.querySelector('[role=gridcell]') && !r.querySelector('[role=columnheader]'));
   let textCol = heads(grid).find((h) => want.includes(plain(h)))?.getAttribute('data-cellindex');
   if (textCol == null) {

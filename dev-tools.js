@@ -413,6 +413,8 @@
         return { error: e.message };
       }
     },
+    // 실행 중에 알게 된 것(학교급 등)을 로그의 '실행' 칸에 덧붙인다
+    note(extra) { if (capture) capture.meta = { ...(capture.meta || {}), ...extra }; },
     done() { capture = null; },
   };
 
@@ -632,10 +634,28 @@
     }
     if (sb) { sb.scrollTop = 0; await wait(150); }
     const combos = [...panel.querySelectorAll('[role=combobox]')].filter((b) => visible(b) && !b.closest('[role=row]'));
-    const val = (n) => { const b = combos.find((x) => (x.getAttribute('aria-label') || '').startsWith(`${n}, `)); return b ? b.getAttribute('aria-label').replace(/^[^,]*,\s*/, '').trim() : ''; };
+    // 조회조건 칸 이름: 칸 앞에 보이는 이름표(label) 글자. 없으면 aria-label 앞부분.
+    //  (초등 학기말종합의견은 학년·반·교과(목) 칸의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다, 2026-11-26 정식 나이스)
+    const condName = (b) => {
+      const al = (b.getAttribute('aria-label') || '').split(',')[0].replace(/\s+/g, '');
+      for (let e = b; e && e.getAttribute?.('role') !== 'tabpanel'; e = e.parentElement) {
+        if (e !== b && e.querySelectorAll('[role=combobox]').length > 1) break;
+        for (let p = e.previousElementSibling; p; p = p.previousElementSibling) {
+          if (/(^|\s)label(\s|$)/.test(String(p.className || ''))) {
+            const t = (p.textContent || '').replace(/필수입력/g, '').replace(/\s+/g, '');
+            if (t) return t;
+          }
+        }
+      }
+      return al;
+    };
+    // 칸의 지금 값 (aria-label 의 쉼표 뒤. 이름표가 틀려도 값은 맞다)
+    const condValue = (b) => (b.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
+    const val = (n) => { const b = combos.find((x) => condName(x) === n.replace(/\s+/g, '')); return b ? condValue(b) : ''; };
     const label = `${grid.getAttribute('aria-label') || ''} ${plain(panel.querySelector('h1, .title, [role=heading]'))}`;
-    const category = /세부능력/.test(label) ? 'seteuk' : /행동특성/.test(label) ? 'behavior' : /창의적|자율|동아리|진로활동/.test(label) ? 'creative' : /종합의견|교과학습/.test(label) ? 'subject' : '';
-    const q = { year: val('학년도'), semester: val('학기'), grade: val('계열/학년/학과') || val('학년'), ban: val('반'), subject: val('과목'), room: val('강의실') };
+    // 초등 학급담임의 학기말종합의견은 교과 세특이라 과세특(seteuk)으로 보낸다 (issamGPT 와 같은 분류)
+    const category = /세부능력|학기말종합의견/.test(label.replace(/\s+/g, '')) ? 'seteuk' : /행동특성/.test(label) ? 'behavior' : /창의적|자율|동아리|진로활동/.test(label) ? 'creative' : /종합의견|교과학습/.test(label) ? 'subject' : '';
+    const q = { year: val('학년도'), semester: val('학기'), grade: val('계열/학년/학과') || val('학년'), ban: val('반'), subject: val('과목') || val('교과(목)'), room: val('강의실') };
     const order = [...seen.keys()].sort((a, b) => a - b);
     return { here: true, ok: true, keyName: plain(keyH), keys: order.map((ri) => seen.get(ri)), names: nameCol != null ? order.map((ri) => names.get(ri) || '') : null, category, query: q };
   }
@@ -653,9 +673,26 @@
       return byTab || [...document.querySelectorAll('[role=tabpanel]')].find((p) => visible(p) && !p.closest('[role=dialog]'));
     })();
     if (!panel) return { here: false };
-    const box = (n) => [...panel.querySelectorAll('[role=combobox]')].find((b) => visible(b) && !b.closest('[role=row]') && (b.getAttribute('aria-label') || '').startsWith(`${n}, `));
+    // 조회조건 칸 이름: 칸 앞에 보이는 이름표(label) 글자. 없으면 aria-label 앞부분.
+    //  (초등 학기말종합의견은 학년·반·교과(목) 칸의 aria-label 이 모두 '학기, 값' 으로 잘못 붙어 있다, 2026-11-26 정식 나이스)
+    const condName = (b) => {
+      const al = (b.getAttribute('aria-label') || '').split(',')[0].replace(/\s+/g, '');
+      for (let e = b; e && e.getAttribute?.('role') !== 'tabpanel'; e = e.parentElement) {
+        if (e !== b && e.querySelectorAll('[role=combobox]').length > 1) break;
+        for (let p = e.previousElementSibling; p; p = p.previousElementSibling) {
+          if (/(^|\s)label(\s|$)/.test(String(p.className || ''))) {
+            const t = (p.textContent || '').replace(/필수입력/g, '').replace(/\s+/g, '');
+            if (t) return t;
+          }
+        }
+      }
+      return al;
+    };
+    // 칸의 지금 값 (aria-label 의 쉼표 뒤. 이름표가 틀려도 값은 맞다)
+    const condValue = (b) => (b.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
+    const box = (n) => [...panel.querySelectorAll('[role=combobox]')].find((b) => visible(b) && !b.closest('[role=row]') && condName(b) === n.replace(/\s+/g, ''));
     if (!box('과목') || !box('강의실')) return { here: false };
-    const cur = (n) => (box(n)?.getAttribute('aria-label') || '').replace(/^[^,]*,\s*/, '').trim();
+    const cur = (n) => { const b = box(n); return b ? condValue(b) : ''; };
     const loadmask = () => [...document.querySelectorAll('.cl-loadmask')].some(visible);
     const settle = async () => { await wait(250); for (let i = 0; i < 100 && loadmask(); i++) await wait(100); };
     const real = (v) => v && !/없음|선택|^전체$/.test(v);
